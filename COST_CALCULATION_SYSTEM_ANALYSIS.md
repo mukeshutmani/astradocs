@@ -39,15 +39,16 @@ Handles all cost-side calculations:
 
 ```javascript
 // Cost Calculation Formula (lines 34-91):
-1. commission_amount = (published_rate * commission_percent) / 100
-2. net_rate = published_rate - commission_amount
-3. net_rate_with_extra = net_rate + extra_charges
-4. tax_amount = SUM(all tax amounts from taxes array)
-5. sst_amount = (commission_amount * sst_percent) / 100  // WHT on commission
-6. total_tax_per_unit = tax_amount + sst_amount
-7. cost_per_unit = net_rate_with_extra + total_tax_per_unit
-8. total_cost_local = cost_per_unit * quantity
-9. total_cost = convertToBaseCurrency(total_cost_local, exchange_rate)
+// Each step is rounded to 2 decimal places (financial rounding) via _round2()
+1. commission_amount = round2((published_rate * commission_percent) / 100)
+2. net_rate = round2(published_rate - commission_amount)
+3. net_rate_with_extra = round2(net_rate + extra_charges)
+4. tax_amount = round2(SUM(all tax amounts from taxes array))
+5. sst_amount = round2((commission_amount * sst_percent) / 100)  // WHT on commission
+6. total_tax_per_unit = round2(tax_amount + sst_amount)
+7. cost_per_unit = round2(net_rate_with_extra + total_tax_per_unit)
+8. total_cost_local = round2(cost_per_unit * quantity)
+9. total_cost = round2(convertToBaseCurrency(total_cost_local, exchange_rate))
 ```
 
 **Key Fields Returned:**
@@ -64,16 +65,17 @@ Handles all price-side calculations:
 
 ```javascript
 // Price Calculation Formula (lines 40-101):
+// Each step is rounded to 2 decimal places (financial rounding) via _round2()
 1. base_price = (if not set, use published_rate with currency conversion)
-2. price_with_markup = base_price + markup
-3. discount_amount = (price_with_markup * discount_percent) / 100
-4. rebate_amount = (price_with_markup * rebate_percent) / 100
-5. total_unit_before_tax = price_with_markup - discount_amount - rebate_amount
-6. tax_amount = SUM(all tax amounts)
-7. total_unit = total_unit_before_tax + tax_amount
-8. transaction_fee_sst = (transaction_fee * sst_percent) / 100
-9. subtotal_local = (total_unit * quantity) + transaction_fee + transaction_fee_sst
-10. total_sales = convertToBaseCurrency(subtotal_local, exchange_rate)
+2. price_with_markup = round2(base_price + markup)
+3. discount_amount = round2((price_with_markup * discount_percent) / 100)
+4. rebate_amount = round2((price_with_markup * rebate_percent) / 100)
+5. total_unit_before_tax = round2(price_with_markup - discount_amount - rebate_amount)
+6. tax_amount = round2(SUM(all tax amounts))
+7. total_unit = round2(total_unit_before_tax + tax_amount)
+8. transaction_fee_sst = round2((transaction_fee * sst_percent) / 100)
+9. subtotal_local = round2((total_unit * quantity) + transaction_fee + transaction_fee_sst)
+10. total_sales = round2(convertToBaseCurrency(subtotal_local, exchange_rate))
 ```
 
 ### 2.2 Component Structure
@@ -121,20 +123,21 @@ if (serviceType.type === 'Hotel' && cost.currency !== '110' && exchangeRate > 1)
 
 #### Cost Retrieval (lines 125-147)
 
-**Dynamic Recalculation:**
+**Dynamic Recalculation (with financial rounding at each step):**
 ```javascript
-// Backend RECALCULATES costs instead of using stored total_costing:
+// Backend RECALCULATES costs with round2() at each step for financial accuracy:
+const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 const published_rate = parseFloat(activeCost?.published_rate || 0);
 const commission_percent = parseFloat(activeCost?.commission || 0);
-const commission_amount = (published_rate * commission_percent) / 100;
-const net_rate = published_rate - commission_amount;
-const extra_charges = parseFloat(activeCost?.free_of_cost || 0);
-const net_rate_with_extra = net_rate + extra_charges;
+const commission_amount = round2((published_rate * commission_percent) / 100);
+const net_rate = round2(published_rate - commission_amount);
+const extra_charges = round2(parseFloat(activeCost?.free_of_cost || 0));
+const net_rate_with_extra = round2(net_rate + extra_charges);
 const sst_percent = parseFloat(activeCost?.sst || 0);
-const wht_amount = (commission_amount * sst_percent) / 100;
-const tax_amount = SUM(cost_taxes);
-const cost_per_unit = net_rate_with_extra + tax_amount + wht_amount;
-const totalCost = cost_per_unit * quantity;
+const wht_amount = round2((commission_amount * sst_percent) / 100);
+const tax_amount = round2(SUM(cost_taxes));
+const cost_per_unit = round2(net_rate_with_extra + tax_amount + wht_amount);
+const totalCost = round2(cost_per_unit * quantity);
 ```
 
 **⚠️ DISCREPANCY #2**: Backend recalculates costs dynamically, ignoring stored `total_costing`!
@@ -267,6 +270,12 @@ Base Price (or converted published rate)
 ### 🚨 DISCREPANCY #4: Missing Field Validation
 **Issue**: No validation that calculated values match stored values
 **Impact**: Data integrity cannot be guaranteed
+
+### ✅ FIXED: Payment Settlement Missing Currency Conversion
+**Location**: `payment.controller.js` (cost status update) and `OrderDetail.jsx` (Receipt/Payment tab display)
+**Issue**: Payment settlement remaining/overpayment calculation was comparing settlement amounts (in PKR) against cost amounts in the cost's local/foreign currency without converting to PKR first.
+**Fix**: Both frontend and backend now multiply `totalCostAmount` by `cost.exchange_rate` before comparing with settlement amounts.
+**Example**: A USD cost with net_rate=$784 and exchange_rate=281 was being compared as 784 instead of 220,304 PKR, causing false overpayment of ~30,720 on a 31,544 PKR settlement.
 
 ### 🚨 DISCREPANCY #5: Amount Field Confusion
 **Location**: Database schema
