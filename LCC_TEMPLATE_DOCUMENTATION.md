@@ -4,7 +4,7 @@
 The LCC (Low Cost Carrier) Template system in PowerSuite is a configurable data import mechanism designed to process flight booking data from various low-cost carriers in Excel format and convert it into standardized service records within the PowerSuite system. The system now features real-time progress tracking and improved error handling.
 
 ## Recent Updates (October 2025)
-- **PNR Grouping**: Rows with the same PNR are automatically grouped into a single order
+- **PNR + Customer Grouping**: Rows with the same PNR and customer code are automatically grouped into a single order
 - **Real-time Progress Tracking**: Row-by-row processing with Server-Sent Events (SSE)
 - **Improved Tax Handling**: Support for multiple tax columns with individual tracking
 - **Enhanced Error Recovery**: Failed rows don't stop the entire import
@@ -48,7 +48,7 @@ The LCC (Low Cost Carrier) Template system in PowerSuite is a configurable data 
 Core functions:
 - `importLccData()`: Traditional batch import function
 - `importLccDataSSE()`: **NEW** - Real-time progress import with SSE
-- `processLccRow()`: **NEW** - Helper to process individual rows
+- `processLccRow()`: Internal helper to process individual rows (not exported)
 - `previewImport()`: Preview without saving
 - `getTemplateWithMappings()`: Retrieve template configuration
 - `createAirSialTemplate()`: Create airline-specific template
@@ -68,7 +68,7 @@ Core functions:
 - `POST /lcc-import/template/airsial/create`: Create AirSial template
 
 #### Axios Configuration
-- Default timeout: 15 seconds for regular requests
+- Default timeout: **120 seconds (2 minutes)** for regular requests
 - Import timeout: **300 seconds (5 minutes)** for file uploads
 - Auto-detection of import requests for extended timeout
 
@@ -119,16 +119,18 @@ Row-by-row processing with live updates and automatic PNR grouping
 - MIME type validation
 - Empty row filtering applied
 
-##### Step 1.5: PNR Grouping (when createOrder is enabled)
-- Rows are grouped by PNR before processing
-- One order is created per unique PNR
-- All services with the same PNR are added to that order
+##### Step 1.5: PNR + Customer Grouping (when createOrder is enabled)
+- Rows are grouped by **PNR + Customer Code** before processing
+- One order is created per unique PNR + Customer combination
+- If the same PNR has 3 different customers, 3 separate orders are created
+- All services with the same PNR and same customer are added to that order
 - Grouping information sent via SSE event
 
 ##### Step 2: SSE Connection Setup
 ```javascript
-// Frontend establishes SSE connection
-const response = await fetch('/api/lcc-import/import-sse', {
+// Frontend establishes SSE connection using dynamic base URL
+const baseURL = import.meta.env.VITE_API_URL || '/api';
+const response = await fetch(`${baseURL}/lcc-import/import-sse`, {
   method: 'POST',
   headers: { 'Authorization': `Bearer ${token}` },
   body: formData
@@ -224,6 +226,9 @@ cost_tax = {
 ## SSE Event Types
 
 ### Events Sent During Import
+
+#### Import Lifecycle Events
+
 1. **start**: Initial event with total row count
 ```json
 { "type": "start", "totalRows": 100, "message": "Starting import of 100 rows with automatic order creation" }
@@ -233,6 +238,8 @@ cost_tax = {
 ```json
 { "type": "grouping_complete", "totalPnrs": 25, "totalRows": 100, "message": "Grouped 100 rows into 25 PNR groups" }
 ```
+
+#### Order Events
 
 3. **order_creation**: Order being created for PNR group
 ```json
@@ -244,29 +251,75 @@ cost_tax = {
 { "type": "order_created", "orderId": 5678, "orderNumber": "HQSO00001234", "customerCode": "CUST001", "pnr": "ABC123", "rowCount": 4, "message": "Order HQSO00001234 created for PNR ABC123 with 4 services" }
 ```
 
-5. **processing**: Row being processed
+5. **order_rollback**: Order rolled back due to no successful services
+```json
+{ "type": "order_rollback", "orderId": 5678, "message": "Order rolled back - no services were created successfully" }
+```
+
+#### Row Processing Events
+
+6. **processing**: Row being processed
 ```json
 { "type": "processing", "currentRow": 5, "totalRows": 100, "pnr": "ABC123", "orderId": 5678, "message": "Processing row 5 (1/4 in PNR ABC123)" }
 ```
 
-6. **row_complete**: Row successfully imported
+7. **row_complete**: Row successfully imported
 ```json
 { "type": "row_complete", "currentRow": 5, "totalRows": 100, "successCount": 5, "errorCount": 0, "ordersCreated": 2 }
 ```
 
-7. **row_error**: Row failed to import (all rows in PNR group fail together)
+8. **row_duplicate**: Duplicate ticket detected (same airline + ticket number)
+```json
+{ "type": "row_duplicate", "currentRow": 5, "duplicate": { "row": 5, "pnr": "ABC123", "ticketNumber": "1234567890", "message": "Duplicate ticket" } }
+```
+
+9. **row_error**: Row failed to import (all rows in PNR group fail together)
 ```json
 { "type": "row_error", "currentRow": 5, "error": {"row": 5, "error": "Supplier not found", "pnr": "ABC123"} }
 ```
 
-8. **skip**: Empty row skipped
+#### Document Generation Events
+
+10. **generating_documents**: Starting invoice document generation for auto-invoice orders
 ```json
-{ "type": "skip", "currentRow": 5, "message": "Skipping empty row 5" }
+{ "type": "generating_documents", "message": "Generating invoice documents for 3 orders with auto-invoice enabled..." }
 ```
 
-9. **complete**: Import finished
+11. **documents_generated**: Invoice documents successfully created
 ```json
-{ "type": "complete", "successCount": 95, "errorCount": 5, "ordersCreated": 25, "orders": [...], "errors": [...], "services": [...] }
+{ "type": "documents_generated", "message": "Generated 3 invoice documents...", "invoiceDocuments": [{ "orderId": 1, "orderNumber": "HQSO00001234", "documentNumber": "HQIN00000001", "invoiceCount": 4 }] }
+```
+
+12. **document_warning**: Invoice document generation failed for an order
+```json
+{ "type": "document_warning", "message": "Failed to generate document for order 123: error details" }
+```
+
+13. **generating_cost_documents**: Starting cost document generation for services with suppliers
+```json
+{ "type": "generating_cost_documents", "message": "Checking for services with suppliers to generate Cost documents..." }
+```
+
+14. **cost_documents_generated**: Cost documents successfully created
+```json
+{ "type": "cost_documents_generated", "message": "Generated 5 Cost documents for services with suppliers", "costDocuments": [{ "pnr": "ABC123", "supplierName": "Air Blue", "documentNumber": "HQCO00000001", "costCount": 2 }] }
+```
+
+15. **cost_document_warning**: Cost document generation failed
+```json
+{ "type": "cost_document_warning", "message": "Failed to generate Cost document for PNR ABC123: error details" }
+```
+
+#### Completion Events
+
+16. **complete**: Import finished with full summary
+```json
+{ "type": "complete", "totalRows": 100, "successCount": 95, "duplicateCount": 3, "errorCount": 2, "errors": [...], "duplicates": [...], "services": [...], "ordersCreated": 25, "orders": [...], "invoiceDocuments": [...], "costDocuments": [...] }
+```
+
+17. **error**: Fatal error that stops the entire import
+```json
+{ "type": "error", "message": "Unexpected error description" }
 ```
 
 ## Progress Modal Features
@@ -309,7 +362,7 @@ cost_tax = {
 ```
 
 ### Timeout Handling
-- Default: 15 seconds for regular requests
+- Default: 120 seconds (2 minutes) for regular requests
 - Imports: 5 minutes timeout
 - SSE: No timeout issues (streaming)
 - Helpful messages for timeout scenarios
@@ -474,21 +527,60 @@ Add these mappings to support multiple sectors:
 
 ### Supported Service Column Names
 
-The system recognizes these patterns (case-sensitive):
+The system supports the following mappable fields:
 
-**Primary (Sector 1)**:
-- `departure_date`, `departure_time`
-- `arrival_date`, `arrival_time`
-- `flight_number`
+**Core Service Fields**:
+- `pnr` - Booking reference
+- `ticket_number` - Ticket number
+- `sale_date` - Sale/issue date
+- `status` - Booking status
 
-**Numbered (Sector 2+)**:
-- `departure_date2`, `DepDate2`
-- `departure_time2`, `DepTime2`
-- `arrival_date2`, `ArrvDate2`, `ArvDate2`
-- `arrival_time2`, `ArrvTime2`, `ArvTime2`
-- `flight_number2`, `FlightNo2`
+**Passenger Information**:
+- `passenger_name` - Passenger name(s)
+- `passenger_type` - Passenger type (ADT/CHD/INF)
+- `passport_number` - Passport number
 
-Replace `2` with `3`, `4`, etc. for additional sectors.
+**Flight Details - Sector 1 (Primary)**:
+- `route` - Route/Sector (e.g., KHI-ISB-LHE)
+- `flight_number` - Flight number
+- `flight_class` - Flight class code
+- `airline_code` - Airline code
+- `departure_date`, `departure_time` - Departure date/time
+- `arrival_date`, `arrival_time` - Arrival date/time
+- `departure_city`, `arrival_city` - Departure/arrival city
+
+**Flight Details - Sectors 2-5**:
+- `departure_date2` through `departure_date5` (also accepts `DepDate2`, etc.)
+- `departure_time2` through `departure_time5` (also accepts `DepTime2`, etc.)
+- `arrival_date2` through `arrival_date5` (also accepts `ArrvDate2`, `ArvDate2`, etc.)
+- `arrival_time2` through `arrival_time5` (also accepts `ArrvTime2`, `ArvTime2`, etc.)
+- `flight_number2` through `flight_number5` (also accepts `FlightNo2`, etc.)
+
+**Financial Fields**:
+- `price` - Base fare/price
+- `tax_amount` - Tax amount
+- `total_amount` - Total amount
+- `commission` - Commission (%)
+- `discount` - Discount
+- `extra_charges` - Extra charges
+- `currency` - Currency code
+- `sst` - Sales and Service Tax
+- `markup` - Markup amount
+
+**Reference Fields**:
+- `customer_code` - Customer reference (REQUIRED)
+- `supplier_code` - Supplier reference
+- `booking_reference` - External booking ref
+- `invoice_number` - Invoice number
+
+**Additional Fields**:
+- `remarks` - Remarks/notes
+- `baggage_allowance` - Baggage allowance
+- `meal_type` - Meal type
+- `seat_number` - Seat number
+- `adult_count` - Number of adults
+- `child_count` - Number of children
+- `infant_count` - Number of infants
 
 ### Best Practices for Multi-Sector
 
@@ -589,7 +681,7 @@ For a 2-sector route, the system creates:
 2. Enable automatic order creation to group services by PNR
 3. Preview before importing
 4. Validate data quality in Excel
-5. Ensure all rows with same PNR have same customer code
+5. Rows with the same PNR but different customer codes will create separate orders
 6. Remove empty rows from Excel
 7. Ensure reference data exists (airlines, suppliers)
 
@@ -608,7 +700,7 @@ For a 2-sector route, the system creates:
 - Review error details in modal
 - Fix issues and re-import failed PNR groups only
 - Check for missing reference data (suppliers, airlines)
-- Ensure all rows with same PNR have consistent customer codes
+- Rows with the same PNR but different customer codes will be split into separate orders
 
 ## Integration Points
 
