@@ -568,7 +568,8 @@ updatePostingRule(data)                 // PUT /posting-rule/update_posting_rule
 |----------|-------------|
 | `generateJournal` | Core function that generates journal entries from documents (invoices, receipts, payments, etc.) |
 | `regenerateBatches` | Regenerates existing journal batches |
-| `generateVoidDepositJE` | Generates void journal entries for customer deposits |
+| `generateVoidDepositJE` | Generates immediate void reversal journal entries for customer deposits |
+| `generateVoidInvoiceJE` | Generates immediate void reversal journal entries for invoices when voided |
 
 ---
 
