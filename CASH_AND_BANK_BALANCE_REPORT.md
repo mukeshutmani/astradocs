@@ -57,6 +57,10 @@ Data is grouped by chart of account. Each account group contains:
 4. **Payments Section**: All payments made from the account (Supplier, Expense, or Credit Note)
 5. **Payments Total Row**: Sum of payment amounts
 6. **Account Balance Row**: Net balance = Total AR Deposits - Total Payments (highlighted in yellow in Excel)
+7. **Summary Section** (when date filter is applied):
+   - **Previous Balance**: Total deposits minus payments before the filter start date (shown with date = 1 day before start)
+   - **Period Activity**: Deposits minus payments within the filtered period
+   - **Fund Available**: Previous Balance + Period Activity (highlighted in green)
 
 ### Columns
 
