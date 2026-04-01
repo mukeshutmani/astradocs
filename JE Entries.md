@@ -47,7 +47,7 @@ Journal Entries are the fundamental records of all financial transactions in a b
 A container that groups related journal entries together, organized by:
 - **Period**: Monthly fiscal period (e.g., 122025 for December 2025)
 - **Branch**: Business branch the entries belong to
-- **Batch Number**: Auto-generated unique identifier (e.g., KHJB00000001)
+- **Batch Number**: Auto-generated unique identifier (e.g., KHJV000001). The numeric sequence is shared across all branches within the same company — e.g., if TT branch gets TTJV000051, KH branch gets KHJV000052. Generated via `getNextCompanyBatchNumber()` helper in `journal.js`.
 
 ### 2. Journal Entry
 Individual debit/credit records within a batch containing:
@@ -69,6 +69,7 @@ Fiscal periods that define when entries can be posted:
 - Scoped to company via `company_code`
 - Periods include a `report_date` for reporting purposes
 - Period date ranges cannot overlap across fiscal years
+- **Date matching**: Period `start_date`/`end_date` are stored as local midnight in UTC. The period lookup adds a 24-hour buffer to `end_date` when comparing with transaction dates to account for timezone offset differences (e.g., UTC+5 causes `end_date` to appear one day earlier in UTC than the intended local date).
 
 ### 4. Journal Entry Types
 Lookup codes that classify journal entries (e.g., Invoice, Receipt, Payment). Used by posting rules to determine which GL accounts to debit/credit.

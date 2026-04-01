@@ -1,6 +1,6 @@
 # AR Ageing Analysis Summary Report - Technical Documentation
 
-**Version**: 1.1
+**Version**: 1.2
 **Date**: March 2026
 **Author**: System Analysis
 **Status**: Stable - Verified
@@ -125,6 +125,10 @@ The Summary Report totals must match the Detail Report:
 ### Version 1.1 (March 2026)
 - **Accounting bracket format for negatives** - Negative values now display in `(brackets)` with red color instead of `-minus` format, following standard accounting conventions
 - Applied to all numeric cells (ageing buckets, total outstanding, grand totals)
+
+### Version 1.2 (April 2026)
+- **Currency conversion fix** - Invoice amounts now converted to PKR using invoice's own `exchange_rate` field first (matching customer account statement report logic), with fallback to `currencies` table. Previously only looked up from `currencies` table which returned no results.
+- **N+1 query elimination** - Replaced per-customer queries (3 queries × N customers) with batch queries using `Op.in`. Reduces DB round-trips from ~1500 to 5 for 500 customers.
 
 ---
 

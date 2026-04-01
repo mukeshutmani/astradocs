@@ -1,7 +1,7 @@
 # AR Ageing Analysis Detail Report - Technical Documentation
 
-**Version**: 1.5
-**Date**: March 2026
+**Version**: 1.6
+**Date**: April 2026
 **Author**: System Analysis
 **Status**: Stable - All Critical Issues Resolved
 
@@ -419,6 +419,18 @@ Minor confusion for users comparing PDF and Excel outputs.
 
 12. **Net Outstanding Allows Negative (Credit Balance)** - Removed `Math.max(0, ...)` from both controller (`net_outstanding` calculation) and template (`NET GRAND TOTAL`). Customers with deposits exceeding their invoice totals now correctly show negative net outstanding values, indicating a credit balance. Previously these were capped at 0, hiding the customer's credit position.
 
+### Completed Fixes (Version 1.6)
+
+13. **Invoice Amount & Amount Settled Currency Conversion** - Fixed critical bug where `invoice_amount` and `amount_settled` fields were stored in original foreign currency (e.g., USD, SAR) while `outstanding` was correctly converted to PKR. Now all three fields (`invoice_amount`, `amount_settled`, `outstanding`) are consistently converted to PKR using the same exchange rate. Original currency values remain available via `original_outstanding`, `original_currency`, and `exchange_rate` fields.
+14. **PDF Template Foreign Currency Label** - Fixed hardcoded currency detection (`invoice.currency === '145'`) that only recognized USD. Now uses `invoice.original_currency` field to detect and label all foreign currencies (USD, SAR, AED, CNY, AUD, SGD, etc.) in the PDF output.
+
+### Completed Fixes (Version 1.6)
+
+13. **Invoice Amount & Amount Settled Currency Conversion** - Fixed bug where `invoice_amount` and `amount_settled` were stored in original foreign currency while `outstanding` was converted to PKR. All three fields now consistently use PKR. Original values remain in `original_outstanding`, `original_currency`, and `exchange_rate` fields.
+14. **PDF Template Foreign Currency Label** - Replaced hardcoded `invoice.currency === '145'` (USD-only) with `invoice.original_currency` check. Now labels all foreign currencies (USD, SAR, AED, CNY, etc.).
+15. **N+1 Query Elimination** - Replaced per-customer queries (3 queries × N customers) with 3 batch queries using `Op.in` for all customer IDs. Results grouped by `customer_id` in JavaScript. Reduces database round-trips from ~1500 to 3 for 500 customers.
+16. **API Timeout Increase** - Backend report route timeout increased from 30s to 5 minutes. Frontend axios timeout for report APIs increased to 5 minutes. Prevents `ERR_EMPTY_RESPONSE` on large datasets.
+
 ### Remaining Improvements
 
 #### Short-Term
@@ -429,8 +441,7 @@ Minor confusion for users comparing PDF and Excel outputs.
 #### Long-Term Enhancements
 
 3. **BSP Calendar Integration** - Integrate actual BSP settlement calendar for precise due dates
-4. **Performance Optimization** - Replace N+1 queries with batch loading, add database indexes
-5. **Advanced Filtering** - Add sales representative, customer category, and minimum outstanding filters
+4. **Advanced Filtering** - Add sales representative, customer category, and minimum outstanding filters
 
 ---
 
