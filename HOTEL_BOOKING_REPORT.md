@@ -12,9 +12,9 @@ The Hotel Booking Report provides a detailed listing of all hotel bookings, grou
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| checkinDateFilter | string | Date filter operator: `=`, `<`, `<=`, `>`, `>=`, `<>`, `between` |
-| checkinStartDate | date | Start date for check-in filter |
-| checkinEndDate | date | End date (required when filter is `between`) |
+| orderDateFilter | string | Date filter operator: `=`, `<`, `<=`, `>`, `>=`, `<>`, `between` |
+| orderStartDate | date | Start date for order date filter (order.created_at) |
+| orderEndDate | date | End date (required when filter is `between`) |
 | hotelNameFilter | string | `isEqual` to filter by specific hotel name |
 | hotel_name | string | Hotel name value when hotelNameFilter is `isEqual` |
 | customerFilter | string | `isEqual`, `isNotBlank`, or `isBlank` |
@@ -27,6 +27,7 @@ The Hotel Booking Report provides a detailed listing of all hotel bookings, grou
 - Queries `service` table where `service_type_id = 3` (Hotel)
 - Includes: `service_hotel`, `order` (with `branch` and `customer`), `supplier`, `invoice`, `cost` (with `cost_tax` and `document`), `user` (with `company` filtered by user's company_code)
 
+
 ## Report Columns
 
 | Column | Source | Description |
@@ -37,7 +38,9 @@ The Hotel Booking Report provides a detailed listing of all hotel bookings, grou
 | checkin_date | service_hotel.check_in | Check-in date (DD-MM-YYYY) |
 | checkout_date | service_hotel.check_out | Check-out date (DD-MM-YYYY) |
 | invoice_no | invoice.invoice_number | Invoice number |
+| inv_status | invoice.status | Invoice status (Raised, Printed, Void, Settled, Partially Settled) |
 | xo_no | cost.Document.document_number | XO (costing) document number |
+| xo_status | cost.status | XO/Cost status (Raised, Printed, Void, Paid, Partially Paid) |
 | no_of_rooms | service_hotel.no_of_rooms | Number of rooms |
 | no_of_nights | service_hotel.no_of_nights | Number of nights |
 | total_room_nights | Calculated | no_of_rooms * no_of_nights |
@@ -55,6 +58,14 @@ The Hotel Booking Report provides a detailed listing of all hotel bookings, grou
 - **WHT**: `commission * sst_percent / 100`
 - **Total Cost (GST Incl)**: `nett_rate + regular_tax + WHT`
 
+## Void Handling
+- Each service can have multiple invoices and multiple costs (XOs).
+- **Void invoices and void costs are completely excluded** — they are filtered out before display.
+- The first non-void invoice and first non-void cost are used for each service row.
+- If all invoices are void but a valid cost exists: row shows with empty invoice fields.
+- If all costs are void but a valid invoice exists: row shows with empty cost fields.
+- If both all invoices and all costs are void: the service row is skipped entirely.
+
 ## Grouping
 Data is sorted by city then hotel name. Grouped by hotel name only (city heading removed).
 
@@ -64,7 +75,7 @@ Each group includes:
 - A subtotal row after each hotel group with summed numeric fields
 
 ## Column Widths
-All columns have explicit widths: Booking No (8%), Customer Name (11%), Supplier Name (11%), Checkin Date (6%), Checkout Date (6%), Invoice No (7%), Xo No (7%), No Of Rooms (4%), No Of Nights (4%), Total Room Nights (5%), Commission (5%), Sales Gst Incl (6%), Cost Gst Incl (6%), Profit (6%), Currency (3%), Used Rate (4%). Configured via `columnWidths` passed to the report template.
+All columns have explicit widths: Booking No (7%), Customer Name (10%), Supplier Name (10%), Checkin Date (5%), Checkout Date (5%), Invoice No (6%), Inv Status (4%), Xo No (6%), XO Status (4%), No Of Rooms (4%), No Of Nights (4%), Total Room Nights (4%), Commission (5%), Sales Gst Incl (6%), Cost Gst Incl (6%), Profit (6%), Currency (3%), Used Rate (4%). Configured via `columnWidths` passed to the report template.
 
 ## Output
 - **PDF**: Generated via `report1.ejs` template and `createPdf` (A4 Landscape), uploaded to MinIO. Print font size: 9px for data, 12px for subtitle, 14px for title.

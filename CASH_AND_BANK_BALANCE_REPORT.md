@@ -74,9 +74,8 @@ Data is grouped by chart of account. Each account group contains:
 | Reference No. | `ref_number` | Reference number |
 | Staff ID | `user.username` | Staff who created the transaction |
 | Currency | `currency_code.currency.currency_code` | Transaction currency (default: PKR) |
-| Amount | `amount` | Transaction amount in original currency |
-| Received Amount | `amount` | Amount received/paid |
-| Base Amount | `amount * exchange_rate` | Amount converted to base currency (PKR) |
+| Received Amount | `amount` (deposits only) | Populated only for AR Deposit rows; empty for Payment rows |
+| Paid Amount (Base Currency) | `amount * exchange_rate` (payments only) | Populated only for Payment rows; empty for AR Deposit rows |
 
 ---
 
@@ -171,15 +170,15 @@ Applied on `created_at` for both customer deposits and payment settlements:
 - `between`: uses startDate and endDate
 - Other operators (`<`, `<=`, `>`, `>=`, `<>`): direct comparison on startDate (day range)
 
-### Bank Account Filter
-Applied via `bank_account` table, resolved to `chart_of_account.id`:
+### Bank/Cash Account Filter
+Applied directly on `chart_of_account.id`. The dropdown fetches cash (185xxx) and bank (181xxx) chart of accounts via `GET /api/report/getCashBankAccountsForFilter`:
 - `isNotBlank`: All accounts (default)
 - `isBlank`: No account filter
-- `isEqual`: Specific bank account by `bank_account.id` → looks up `chart_of_account_id` and filters by `chart_of_account.id`
-- `in`: Multi-select — user picks multiple bank accounts → sends `bank_account_ids` array → looks up all `chart_of_account_id` values and filters by `chart_of_account.id IN (...)`. Selected accounts are displayed as removable badge/tags below the dropdown.
-- `between`: Range of bank account IDs → looks up all `chart_of_account_id` values in range and filters by `chart_of_account.id IN (...)`
+- `isEqual`: Specific account by `chart_of_account.id`
+- `in`: Multi-select — user picks multiple accounts → sends `bank_account_ids` array → filters by `chart_of_account.id IN (...)`. Selected accounts are displayed as removable badge/tags below the dropdown.
+- `between`: Range of `chart_of_account.id` values
 
-The frontend dropdown displays bank accounts as `"Bank Name - Account Number"` (e.g., "MCB Bank Limited - 1234567890") using data from `GET /api/bank` endpoint.
+The frontend dropdown displays accounts as `"key_account - description"` (e.g., "185001 - Cash Box", "181080 - MCB Bank").
 
 ### Document Filter
 Checkbox-based filter to include/exclude document types (all selected by default):
