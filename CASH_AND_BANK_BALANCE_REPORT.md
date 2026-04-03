@@ -71,7 +71,7 @@ Data is grouped by chart of account. Each account group contains:
 | Transaction Date | `created_at` | Transaction date (DD MMM YYYY) |
 | Payee/Payer No. | `customer.customer_number` / `supplier.supplier_number` / `chart_of_account.key_account` | Payee or payer identifier |
 | Payee/Payer Name | `customer.customer_name` / `supplier.supplier_name` + payment type label | Name with type annotation (Supplier/Expense/Credit Note) |
-| Reference No. | `ref_number` | Reference number |
+| Remarks | `remarks` | Remarks from the deposit/payment document |
 | Staff ID | `user.username` | Staff who created the transaction |
 | Currency | `currency_code.currency.currency_code` | Transaction currency (default: PKR) |
 | Received Amount | `amount` (deposits only) | Populated only for AR Deposit rows; empty for Payment rows |
