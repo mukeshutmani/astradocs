@@ -416,9 +416,9 @@ Columns:
 - Reference (reference || description)
 - Description (description)
 - Cheque No (composed from: pay_type_form.label - chart_of_account.key_account - check_number)
-- Amount (FULL deposit value, not remaining balance)
+- Amount (FULL deposit value converted to PKR, not remaining balance)
 
-**Note**: All deposits are shown with their full original values
+**Note**: All deposits are shown with their full values converted to PKR using the deposit's currency exchange rate
 
 #### 8. **Payments** (Payment Settlements TO Customer — NEW)
 Payments made TO the customer via credit notes (refund payments).
@@ -670,8 +670,8 @@ Orders can have multiple services. Each service generates its own invoice entry.
 Only invoices with status in ["Printed", "Settled", "Partially Settled"] are included
 
 ### 11.5 Deposit Calculation
-All deposits are shown with their FULL values
-- Full deposit amount is used in both display and calculations
+All deposits are shown with their FULL values converted to PKR
+- Full deposit amount is converted using the deposit's currency exchange rate for both display and calculations
 - No longer tracking remaining balance or usage
 
 ### 11.6 Receipt/Voucher Filtering

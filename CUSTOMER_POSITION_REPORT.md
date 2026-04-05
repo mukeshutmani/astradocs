@@ -159,7 +159,7 @@ netBalance = openingBalance
 ### Query Strategy (7-Step Approach)
 
 1. **Step 1**: Get customers (basic data with company scope)
-2. **Step 2**: Get customer deposits (with currency/exchange rate)
+2. **Step 2**: Get customer deposits (with currency/exchange rate, scoped by company_code)
 3. **Step 3**: Get receipt settlements (with payment details)
 4. **Step 4**: Get orders with services (raw SQL, with branch filter)
 5. **Step 5**: Get invoices (raw SQL) + invoice taxes
@@ -194,6 +194,8 @@ Controlled by `invoice_settings.ticket_issue_date_in_invoice` per company:
 ## Company Scoping
 
 Scoped via `customer → user → where: { company_code: req.user.company_code }`.
+
+All currency exchange rate queries (deposits, historical deposits) also filter by `company_code` to ensure correct PKR conversion rates are used per company.
 
 ---
 

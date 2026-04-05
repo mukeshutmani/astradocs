@@ -83,13 +83,25 @@ For each source posting rule, the following fields are replicated to target bran
 2. Confirm the rules appear correctly
 3. Verify prefix codes match the target branch
 
-## Overwrite Behavior
+## Copy Modes
 
-| Overwrite OFF (default) | Overwrite ON |
-|------------------------|--------------|
-| Skips branches that already have rules for the selected posting type | Deletes existing rules on target branches first, then creates new copies |
-| Safe for incremental setup | Use when source rules have changed and targets need full refresh |
-| Reports skipped branches in summary | Reports overwritten count in summary |
+| Mode | Checkbox | Behavior |
+|------|----------|----------|
+| **Default** (both off) | — | Skips entire branch if it already has rules for the selected posting type |
+| **Merge** | "Merge — add only missing rules" | Compares each rule individually. Adds only rules that don't already exist in the target branch. Existing rules are untouched. |
+| **Overwrite** | "Overwrite existing rules" | Deletes all existing rules on target branches first, then creates fresh copies from source |
+
+Merge and Overwrite are mutually exclusive — enabling one disables the other.
+
+### Merge Duplicate Detection
+A source rule is considered a duplicate if the target branch already has a rule matching ALL of these fields:
+- `journal_entry_type_id`
+- `posting_number_type_id`
+- `debit_credit`
+- `service_type_id`
+- `customer_type_id`
+- `chart_of_account_id`
+- `record_type`
 
 ## API Endpoint
 
@@ -104,12 +116,14 @@ For each source posting rule, the following fields are replicated to target bran
     "source_branch_id": 1,
     "target_branch_ids": [2, 3, 5],
     "posting_number_type_id": 4,
-    "overwrite": false
+    "overwrite": false,
+    "merge": true
 }
 ```
 
 - `posting_number_type_id`: Optional. If omitted, copies rules for ALL posting types.
 - `overwrite`: Optional (default: false). If true, deletes existing target rules before copying.
+- `merge`: Optional (default: false). If true, adds only missing rules (skips duplicates). Mutually exclusive with `overwrite`.
 
 **Response (201):**
 ```json

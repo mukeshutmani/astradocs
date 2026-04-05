@@ -21,8 +21,9 @@ The Cash and Bank Balance Report shows the balance of cash/bank accounts by comp
 
 **Filters**:
 - Document Date: blank, =, <, <=, >, >=, <>, between (on `created_at`)
-- Bank Account: isNotBlank, isBlank, isEqual, in, between (on `bank_account.id`, resolved to `chart_of_account.id` via `bank_account.chart_of_account_id`)
+- Bank Account: isNotBlank, isBlank, isEqual, in, between (on `chart_of_account.id` directly). Dropdown shows bank accounts + cash accounts (excludes Rollup type), fetched via `GET /api/report/getCashBankAccountsForFilter`
 - Document: checkboxes for Deposit, Payment, Overpayment (all selected by default)
+- Document No.: text search with real-time autocomplete suggestions (deposits + payments), fetched via `GET /api/report/searchCashBalanceDocuments`. Filters by `receipt_number` (LIKE) for deposits and `payment_number` (LIKE) for payments
 
 **Output**: PDF or Excel
 
@@ -69,13 +70,13 @@ Data is grouped by chart of account. Each account group contains:
 | Document No. | `customer_deposit.receipt_number` / `payment_settlement.payment_number` | Document identifier |
 | Status | `customer_deposit.status` / `payment_settlement.status` | Document status (excludes Void) |
 | Transaction Date | `created_at` | Transaction date (DD MMM YYYY) |
-| Payee/Payer No. | `customer.customer_number` / `supplier.supplier_number` / `chart_of_account.key_account` | Payee or payer identifier |
-| Payee/Payer Name | `customer.customer_name` / `supplier.supplier_name` + payment type label | Name with type annotation (Supplier/Expense/Credit Note) |
+| Payee/Payer No. | `customer.customer_number` / `supplier.supp_no` / `credit_note.customer.customer_number` | Payee or payer identifier |
+| Payee/Payer Name | `customer.customer_name` / `supplier.supp_name` + payment type label | Name with type annotation (Supplier/Expense/Credit Note). Credit Note payments show the customer name. |
 | Remarks | `remarks` | Remarks from the deposit/payment document |
 | Staff ID | `user.username` | Staff who created the transaction |
 | Currency | `currency_code.currency.currency_code` | Transaction currency (default: PKR) |
-| Received Amount | `amount` (deposits only) | Populated only for AR Deposit rows; empty for Payment rows |
-| Paid Amount (Base Currency) | `amount * exchange_rate` (payments only) | Populated only for Payment rows; empty for AR Deposit rows |
+| Received Amount | `amount * exchange_rate` (deposits only) | Deposit amount converted to PKR using company-specific exchange rate; empty for Payment rows |
+| Paid Amount (Base Currency) | `amount * exchange_rate` (payments only) | Payment amount converted to PKR using company-specific exchange rate; empty for AR Deposit rows |
 
 ---
 
@@ -105,10 +106,10 @@ account_balance.base_amount = total_ar_deposits.base_amount - total_payments.bas
 ### Base Amount Conversion
 
 ```
-base_amount = amount * exchange_rate (from currency_code -> currency where to_currency = "PKR")
+base_amount = amount * exchange_rate (from currency_code -> currency where to_currency = "PKR" AND company_code = user.company_code)
 ```
 
-If no exchange rate is found, defaults to rate of 1 (i.e., base_amount = amount).
+If no exchange rate is found, defaults to rate of 1 (i.e., base_amount = amount). Exchange rates are company-specific to ensure correct conversion.
 
 ---
 
