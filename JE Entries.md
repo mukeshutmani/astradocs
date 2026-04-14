@@ -568,9 +568,19 @@ updatePostingRule(data)                 // PUT /posting-rule/update_posting_rule
 | Function | Description |
 |----------|-------------|
 | `generateJournal` | Core function that generates journal entries from documents (invoices, receipts, payments, etc.) |
+| `invoicePostingRules` | Generates invoice JE entries with entry merging by service type |
+| `costingPostingRules` | Generates XO/Cost JE entries with entry merging by service type |
+| `settlementPostingRules` | Generates receipt settlement JE (AREC, SETL, CASH, CNAR, GL accounts) |
+| `paymentPostingRules` | Generates payment settlement JE with per-payment-method credit entries and overpayment support |
+| `depositPosingRules` | Generates customer deposit JE using deposit's own exchange rate |
+| `voidInvoicePostingRules` | Void reversal for invoices with entry merging |
+| `voidCostingPostingRules` | Void reversal for costs with entry merging |
+| `voidSettlementPostingRules` | Void reversal for receipt settlements |
+| `voidSupplierPaymentPostingRules` | Void reversal for payment settlements with overpayment support |
+| `voidDepositPostingRules` | Void reversal for customer deposits |
 | `regenerateBatches` | Regenerates existing journal batches |
-| `generateVoidDepositJE` | Generates immediate void reversal journal entries for customer deposits |
-| `generateVoidInvoiceJE` | Generates immediate void reversal journal entries for invoices when voided |
+| `getNextCompanyBatchNumber` | Generates company-scoped, prefix-specific batch numbers |
+| `groupEntriesByPeriod` | Groups journal entries by fiscal period based on transaction date |
 
 ---
 
@@ -655,6 +665,61 @@ These codes enable:
 - Drill-down from GL to source documents
 - Report filtering and grouping
 - Audit trail maintenance
+
+---
+
+## Entry Merging
+
+JE entries are automatically merged when multiple services of the same type exist within a single document. This applies to both Invoice and XO/Cost JE generation, as well as their Void counterparts.
+
+**Merge Key**: Same document number (`analysis_code1`) + Same GL account (`chart_of_account_id`) + Same service type (`analysis_code4`) + Same direction (Debit/Credit)
+
+**Example**: An XO document with 3 Hajj costs and 1 Tour cost:
+- **Before merge**: 3 CSAL Hajj entries + 1 CSAL Tour entry + 3 APAY Hajj + 1 APAY Tour = 8 entries
+- **After merge**: 1 CSAL Hajj (summed) + 1 CSAL Tour + 1 APAY Hajj (summed) + 1 APAY Tour = 4 entries
+
+**Applied in**: `invoicePostingRules`, `costingPostingRules`, `voidInvoicePostingRules`, `voidCostingPostingRules`
+
+---
+
+## Invoice Date Preservation
+
+For Air services (including LCC imports), `invoice_date` is preserved throughout the document lifecycle:
+
+1. **LCC Import**: Sets `invoice_date` from Excel's `sale_date` column
+2. **Generate Document / Print**: Does NOT overwrite `invoice_date` for Air services (checks `ticket_issue_date` presence)
+3. **Void & Re-generate**: Replacement invoice copies original `invoice_date` from voided invoice
+4. **Non-Air services** (Hotel, Tour, etc.): `invoice_date` is set from the "Select Date" picker as before
+
+**XO/Cost JE Transaction Date**: Uses `invoice_date` from the related Printed invoice (prefers Printed status over Raised). Falls back to `doc.created_at` if no invoice found.
+
+---
+
+## GL Settle Accounts (Company Isolation)
+
+GL Settle Accounts are company-scoped via `company_code` column. Each company sees only its own GL settle accounts in the UI and receipt settlement dropdowns.
+
+- **Backend**: `getGlSettleAccounts` filters by `req.user.company_code`
+- **Create**: Auto-saves `company_code` from logged-in user
+- **Receipt Settlement**: GL Account dropdown shows only current company's accounts
+
+---
+
+## Payment Settlement - Multiple Payment Methods
+
+Payment settlements with multiple payment methods (e.g., Cheque + GL Account) generate separate JE credit entries per payment method, each with its own `chart_of_account_id`. Previously, all payments were combined into a single entry using the first payment's account.
+
+---
+
+## Payment Settlement - Overpayments
+
+Supplier overpayments used in payment settlements generate JE entries using the Supplier Advance Payment account (`supplierAdvanceRule`/APAY). Applied in both `paymentPostingRules` and `voidSupplierPaymentPostingRules`.
+
+---
+
+## SST Rounding
+
+SST (Sales Service Tax) amount is rounded to 2 decimal places before exchange rate conversion to match the invoice display value and prevent rounding differences in JE totals.
 
 ---
 
