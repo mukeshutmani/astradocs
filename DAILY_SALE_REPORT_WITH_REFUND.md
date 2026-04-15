@@ -84,10 +84,12 @@ Protected by `authenticate` and `permission("Daily-Sale-Report-With-Refund")`.
 
 ### Summary Table
 
-Breakdown by service category with columns: **Total Sales, Total Credit, Total Cost, Total Debit, SST, Profit/Loss**, followed by a grand total row.
+Breakdown by service category with columns: **Total Sales, Total Credit, Net Sales, Total Cost, Total Debit, Net Cost, SST, Profit/Loss**, followed by a grand total row.
 
 - **Total Credit** = sum of CN amounts (from `refundSummary[type].credit`) allocated to that service type.
 - **Total Debit** = sum of DN amounts (from `refundSummary[type].debit`) allocated to that service type.
+- **Net Sales** = `Total Sales − Total Credit` (per row and at grand total).
+- **Net Cost** = `Total Cost − Total Debit` (per row and at grand total).
 - **SST** = actual SST accumulated per service type from each invoice's SST.
 
 **Per-category Profit/Loss** formula:
@@ -143,7 +145,7 @@ A separate table is rendered below the summary listing each Credit Note and Debi
 **Row rules:**
 - One row per document.
 - **Credit Notes** populate the receivable side (matching service-type column based on the linked service). SST = `cn.sst_amount`. Pax / S-ID copied from the linked service.
-  - Service type is resolved by trying `cn.settled_invoice_number → invoice.service` first; if that's null (refund-only CNs), it falls back to `cn.refund_id → refund.service_id → service`. Only CNs with no linkage at all default to **Misc**.
+  - Service type is resolved by trying `cn.refund_id → refund.service_id → service` **first** (refund-related CNs are anchored to the refund's actual service, even when the CN is settled against an unrelated invoice for ledger purposes). If the CN has no `refund_id`, it falls back to `cn.settled_invoice_number → invoice.service`. Only CNs with no linkage at all default to **Misc**. This keeps CN allocation consistent with DN allocation (DN already uses `refund.service_id`).
 - **Debit Notes** populate the payable side (service type from the linked refund's service, plus Debit Note No. and Supp Name from the active cost). SST = 0. Pax / S-ID copied from the refund's linked service.
 
 **Profit/Loss formula (refund section): `Total Debit − Total Credit`.**
@@ -159,9 +161,18 @@ The payable side's first column is **Doc Number**:
 
 **Date filtering for the refund section:** CNs and DNs are filtered by their **own `doc_date`** (with `created_at` as fallback when `doc_date` is null), not by the linked invoice's date. This means a refund issued in the report's date range always appears, even if the original invoice is outside that range. Both queries are scoped to the current company via `branch_id` belonging to the company's branches and exclude `Void` documents.
 
-**Other filters applied to refund rows:** After loading, each refund row is checked against the same filter criteria used by the main sales table — **Supplier, Customer (including `between`), Branch, Product Code, Pax Name, PNR, and Sales ID** — using the linked service's data. A refund row is dropped if the linked service doesn't match. For CN rows the linked service comes from `cn.settled_invoice_number → invoice.service` (or `cn.refund_id → refund.service`). For DN rows it comes from `dn.refund_id → refund.service`. The Document Status filter is not re-applied to refund docs (refunds are their own documents with their own `doc_status`); Void refund docs are always excluded.
+**Other filters applied to refund rows:** After loading, each refund row is checked against the same filter criteria used by the main sales table — **Supplier, Customer (including `between`), Branch, Product Code, Pax Name, PNR, and Sales ID** — using the linked service's data. A refund row is dropped if the linked service doesn't match. For CN rows the linked service comes from `cn.refund_id → refund.service` (or `cn.settled_invoice_number → invoice.service` when no `refund_id`). For DN rows it comes from `dn.refund_id → refund.service`.
+
+**Document Status filter on refund docs:** The same `documentStatus` rules used for invoices are now applied to CN and DN queries via their own `doc_status` column:
+- **isEqual** — refund docs must have `doc_status` exactly equal to the chosen status.
+- **in** — refund docs whose `doc_status` is in the chosen array.
+- **default (none)** — refund docs in `Printed`, `Settled`, or `Partially Settled` (excludes `Raised` and `Void`).
+
+Void refund docs are always excluded.
 
 If a CN's `settled_invoice_number` or a DN's linked refund's `service_id` references an invoice/service that wasn't already loaded for the main table, the controller fetches the missing invoice/service info on demand so the refund row still has correct service type, customer, supplier, XO, pax, and sales ID.
+
+**Service resolution for refund rows** is done via a **service-id keyed lookup** (not the invoice-number keyed lookup). An invoice number can map to multiple invoice rows (multi-service invoices), so keying the refund match by invoice number would drop entries on collision and cause debit notes for (e.g.) Air to land in Misc. Keying by `service.id` avoids this and guarantees each refund row is allocated to the exact service type of its linked service.
 
 A bold **TOTAL** row at the bottom sums each column. Hajj/Umrah amounts are folded into the Misc column the same way as the main table.
 

@@ -97,3 +97,22 @@ ORDER BY st.type;
 ## Notes:
 - The report now accurately reflects the business requirement where refunds impact the actual sales figures for each service type
 - This aligns with the example shown in the screenshot where the refund amount (PKR 1,000) should be deducted from Air Ticket Sales
+
+---
+
+## Update: April 2026 — Multiple Invoices Per Service
+
+### Problem
+- A service could have more than one valid (Printed / Partially Settled / Settled) invoice, for example when a document was re-invoiced without voiding the earlier one.
+- Previous code picked only the first Printed invoice per service using `invoices.find(...)`, silently dropping any additional invoices.
+- Result: the report under-reported sales for the affected customer/service type.
+
+### Fix
+- `psback/controllers/report.controller.js` → `getCustomerVolume` now loops over **all** valid invoices for each service (Printed / Partially Settled / Settled, plus Void for credit-note processing).
+- Sales, SST, invoice taxes, and refunds are aggregated per invoice.
+- Cost calculation and supplier debit notes remain **once per service** (guarded by a `serviceCostProcessed` flag) to avoid double-counting when a service has multiple invoices.
+- Date filter is applied per invoice; if every invoice on a service fails the date range, the service is skipped entirely and its cost is not counted.
+
+### Behavior Change
+- Services with multiple valid invoices now contribute every invoice's sales. Previously only one was counted.
+- Customers who have duplicate Printed invoices on the same service will show higher totals after this fix.
