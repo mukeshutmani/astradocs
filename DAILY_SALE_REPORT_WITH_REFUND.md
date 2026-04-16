@@ -78,6 +78,15 @@ Protected by `authenticate` and `permission("Daily-Sale-Report-With-Refund")`.
 
 **Note:** Hajj and Umrah receivable/payable amounts are folded into the **Misc** column in the main table; they still appear as dedicated rows in the Summary table.
 
+**Row grouping — one row per (invoice + service type):**
+A single logical service can be split across multiple rows in the `invoices`/`services` tables (e.g., a Hajj booking stored as 3 service records — one per passenger group — all sharing the same PNR and invoice number). To avoid showing the same service as multiple rows, the main sales table merges all rows sharing the same `invoice_no + service_type` into one row:
+- **Sales / Cost / SST / Profit-Loss** — summed across merged rows.
+- **PNR, XO Number, Supp Name** — if identical across merged rows, shown once; if they differ, unique values are concatenated with `, `.
+- **Pax Names** — unique pax names from all merged services are concatenated.
+- **Invoice Date, Status, Client Name, Sales ID** — taken from the first row (identical for all rows of the same invoice).
+
+Service types remain distinct during grouping — an invoice with both Hajj and Tour produces **two main-table rows** (one Hajj, one Tour), not one merged Misc row. Summary table totals are computed from the pre-merge per-service data, so grand totals are unchanged. **The Refund Section has its own merging rules (CN + DN merged by `refund_id`) and is not affected by this main-table grouping.**
+
 **Main table totals row:** The last row shows column-wise totals.
 
 **Status display:** `Partially Settled` is displayed as **PS**.
@@ -109,7 +118,7 @@ The calculation breakdown shown above the final value displays the components so
 ### Section Order (PDF + Excel)
 
 Both outputs now render sections in this order:
-1. **Sales Section** — titled header + main sales table (one row per service)
+1. **Sales Section** — titled header + main sales table (one row per invoice + service type — see "Row grouping" above)
 2. **Refund Section (Credit Notes & Debit Notes)** — titled header + refund table
 3. **Summary Section** — titled header + category-wise totals table
 4. **TOTAL PROFIT/LOSS** footer

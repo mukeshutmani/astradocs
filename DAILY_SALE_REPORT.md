@@ -62,6 +62,15 @@ The Daily Sale Report provides a comprehensive daily view of sales and costs bro
 
 **Note:** Hajj and Umrah receivable/payable amounts are **folded into the Misc column** in the main table (so Misc shows `misc + hajj + umrah`). Hajj and Umrah are still tracked separately and appear as dedicated rows in the Summary table below.
 
+**Row grouping — one row per (invoice + service type):**
+A single logical service can be split across multiple rows in the `invoices`/`services` tables (e.g., a Hajj booking stored as 3 service records — one per passenger group — all sharing the same PNR and invoice number). To avoid showing the same service as multiple rows, the main table merges all rows sharing the same `invoice_no + service_type` into one row:
+- **Sales / Cost / SST / Profit-Loss** — summed across merged rows.
+- **PNR, XO Number, Supp Name** — if identical across merged rows, shown once; if they differ, unique values are concatenated with `, `.
+- **Pax Names** — unique pax names from all merged services are concatenated.
+- **Invoice Date, Status, Client Name, Sales ID** — taken from the first row (identical for all rows of the same invoice).
+
+Service types remain distinct during grouping — an invoice with both Hajj and Tour produces **two rows** (one Hajj, one Tour), not one merged Misc row. Summary table totals are computed from the pre-merge per-service data, so grand totals are unchanged by the grouping.
+
 **Main table totals row:** The last row of the main table displays column-wise totals (Air, Visa, Hotel, ..., Misc, Total Sales, ..., Total Cost, SST, Profit/Loss). The Misc total on this row equals `misc + hajj + umrah` to stay consistent with the folded column display. The XO Number and Supp Name columns are empty on the totals row.
 
 **Payable side columns:**
