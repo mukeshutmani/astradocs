@@ -273,7 +273,15 @@ Each supplier shows:
 
 ### Excel
 - **Library**: ExcelJS
-- **Features**: Frozen header rows, auto-fit columns, supplier grouping, formatted amounts
+- **Layout**: 13 columns (A..M), matching the PDF exactly.
+- **Columns (same order as PDF)**: Doc No., TC Code, Order No., Description, Doc Date, Days Overdue, Current (Within Cr. Period), 1-30 Days, 31-60 Days, 61-90 Days, 91-120 Days, 121+ Days, Total Outstanding.
+- **Per-supplier block** (identical structure to PDF):
+  1. **Supplier header row** — `Name (supp_no)` merged across cols A..K, `Credit Limit` label in col L, value in col M (gray background, bold).
+  2. **Column header row** — bold, light-gray fill, bordered. Amount columns right-aligned.
+  3. **Data rows** — one per XO/Debit Note/Advance Payment, amounts locale-formatted with 2 decimals.
+  4. **"Total in PKR" row** — label spans cols A..E (right-aligned, bold), col F blank, sums in cols G..M.
+  5. **"Supplier Total PKR:" row** — label spans cols A..E, sum of `days_overdue` in col F, sums in cols G..M.
+- **Features**: Frozen header rows (first 7), supplier grouping, auto-sized columns, thin borders, formatted amounts.
 
 ---
 

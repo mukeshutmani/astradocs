@@ -321,22 +321,34 @@ Currency conversion errors are caught and logged - the unconverted amount is use
 
 ### Excel Structure
 
-**Columns** (13 total):
-Invoice No | Invoice Date | Due Date | Days Overdue | Invoice Amount | Amount Settled | Outstanding | Current | 1-30 Days | 31-60 Days | 61-90 Days | 91-120 Days | 120+ Days
+The Excel export now mirrors the PDF **exactly** — same 14 columns, same per-customer structure, same color scheme, same grand-total block.
+
+**Columns (14 total, A..N)** — identical to the PDF:
+Customer/Doc No. | TC Code | Sales ID | Customer Ref. | Doc Date | Due Date | Days Overdue | Current (Within Cr. Period) | 1-30 Days | 31-60 Days | 61-90 Days | 91-120 Days | 121+ Days | Total Outstanding
 
 **Layout**:
-- **Rows 1-6**: Header section (company name size 24, address, report title, metadata). All merged across columns A-K.
-- **Row 7**: Frozen header row (column headers)
-- **Frozen rows**: First 7 rows are frozen for scrolling
+- **Rows 1-6**: Header section (company name size 24, address, report title, metadata). Merged across A..N.
+- **Row 7**: Blank spacer.
+- **Row 8**: Frozen column header row (gray `#D9D9D9`, bold, bordered). Amount columns (G..N) right-aligned.
 
-**Color-coded sections**:
-- Gray (`FFD9D9D9`): Column headers (bold, bordered)
-- Light gray (`FFF0F0F0`): Customer headers (`{customer_number} - {customer_name} (Credit Terms: {credit_terms})`)
-- Orange (`FFFFE0B2`): Customer subtotals (bold)
-- Green font: Deposit credits (negative amounts), with "Less: Deposit Credit" label
-- Dark gray (`FFD3D3D3`): Grand totals (bold size 12, double-line borders)
+**Per-customer section** (repeats for each customer):
+1. **Customer header row** — `Customer: {number} - {name}` merged A..N, bold, light gray `#F0F0F0`.
+2. **Invoice rows** — one per invoice. Outstanding amount placed in the matching ageing-bucket column (H..M based on days overdue); Total Outstanding in col N bold. Other bucket cells left blank. Uses `invoice.outstanding || invoice.amount` and `invoice.days_overdue || invoice.days_since_created` (same fallback as PDF).
+3. **Customer Total row** — label merged A..F (right-aligned bold), avg days in G, bucket totals H..M, total in N. Light gray `#F0F0F0` fill.
+4. **Deposits section** (only if `customer.deposits.length > 0`):
+   - Section header: `Deposits (Credit Balance)` merged A..N, yellow `#FFF3CD`, bold.
+   - Deposit rows: pink `#FFE6E6` fill, amounts shown in parens, red font `#FF0000`. `DEPOSIT` label in col 4.
+5. **Credit Notes section** (only if `customer.credit_notes.length > 0`): same styling as Deposits; `CREDIT NOTE` label in col 4.
+6. **Per-customer Net Outstanding row** (only if deposits or credit notes exist): label merged A..M (right-aligned), net value in col N, green `#D4EDDA` fill.
+7. **Blank spacer row** between customers.
 
-**Formatting**: Numeric cells use `#,##0.00` format, right-aligned. Auto-fit columns (width 10-50).
+**Grand Total block** (end of sheet):
+- **Grand Total - All Customers row** — dark `#333333` fill with **white text**. Label merged A..G (right-aligned bold), bucket sums H..M, grand total in N.
+- **Less: Total Deposits** (only if `grandDeposits > 0 || grandCreditNotes > 0`) — pink `#FFE6E6`, red amount in parens in col N.
+- **Less: Total Credit Notes** — same styling.
+- **NET GRAND TOTAL** — green `#D4EDDA`, bold size 12, net value (size 14 bold) in col N = `grandTotal − grandDeposits − grandCreditNotes`.
+
+**Formatting**: All amounts use `en-US` locale with 2-decimal formatting. All cells have thin black borders. Frozen pane preserves the header rows while scrolling data.
 
 ---
 
