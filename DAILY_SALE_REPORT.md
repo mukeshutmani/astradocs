@@ -62,14 +62,16 @@ The Daily Sale Report provides a comprehensive daily view of sales and costs bro
 
 **Note:** Hajj and Umrah receivable/payable amounts are **folded into the Misc column** in the main table (so Misc shows `misc + hajj + umrah`). Hajj and Umrah are still tracked separately and appear as dedicated rows in the Summary table below.
 
-**Row grouping — one row per (invoice + service type):**
-A single logical service can be split across multiple rows in the `invoices`/`services` tables (e.g., a Hajj booking stored as 3 service records — one per passenger group — all sharing the same PNR and invoice number). To avoid showing the same service as multiple rows, the main table merges all rows sharing the same `invoice_no + service_type` into one row:
-- **Sales / Cost / SST / Profit-Loss** — summed across merged rows.
-- **PNR, XO Number, Supp Name** — if identical across merged rows, shown once; if they differ, unique values are concatenated with `, `.
-- **Pax Names** — unique pax names from all merged services are concatenated.
-- **Invoice Date, Status, Client Name, Sales ID** — taken from the first row (identical for all rows of the same invoice).
+**Row grouping — one row per invoice (with XO-based supplier split):**
+Per-service rows are grouped by `invoice_no`. The main table now emits:
+- **One primary row per invoice** carrying the **full customer-side sales** — every service's amount is placed in its matching column (Air→Air, Hotel→Hotel, Hajj/Umrah folded into Misc), plus the invoice's **Total Sales** and full **Profit/Loss**. All unique pax names from every service are shown on this row.
+- **Supplier side** is split by distinct XO:
+  - If all services share **one XO** (or no valid XO) → single row only.
+  - If **multiple XOs** → additional **secondary rows** are emitted, one per extra XO. Each secondary row shows only that XO's cost breakdown (per service column), XO Number, and Supp Name.
+- **On secondary rows**: Invoice No., Inv. Date, PNR, Status, Client Name, all customer-side sales columns, Profit/Loss, and Sales ID are **blank** — they belong to the primary row. The Pax column is left as-is (display-only; CSS truncation unchanged per user preference).
+- Services with **no valid XO** still contribute their sales to the primary row; no supplier row is created for them. Their P/L share is included in the primary row's total Profit/Loss.
 
-Service types remain distinct during grouping — an invoice with both Hajj and Tour produces **two rows** (one Hajj, one Tour), not one merged Misc row. Summary table totals are computed from the pre-merge per-service data, so grand totals are unchanged by the grouping.
+Summary table totals are computed from the pre-grouping per-service data, so grand totals are unchanged.
 
 **Main table totals row:** The last row of the main table displays column-wise totals (Air, Visa, Hotel, ..., Misc, Total Sales, ..., Total Cost, SST, Profit/Loss). The Misc total on this row equals `misc + hajj + umrah` to stay consistent with the folded column display. The XO Number and Supp Name columns are empty on the totals row.
 

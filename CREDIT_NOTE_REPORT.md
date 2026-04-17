@@ -20,16 +20,19 @@ The Credit Note Report lists customer credit notes (refund documents) grouped by
 
 | Field             | Type    | Description |
 |-------------------|---------|-------------|
-| `dateFilter`      | string  | `blank`, `=`, `<`, `<=`, `>`, `>=`, `<>`, `between` |
+| `dateFilter`      | string  | `blank`, `=`, `<`, `<=`, `>`, `>=`, `<>`, `between`. **Default on UI: `between`.** |
 | `startDate`       | string  | Required when `dateFilter` is set (other than `blank`) |
 | `endDate`         | string  | Required when `dateFilter = between` |
-| `branchFilter`    | string  | `isNotBlank`, `isBlank`, `isEqual` |
+| `branchFilter`    | string  | `isNotBlank`, `isBlank`, `isEqual`, `isIn` |
 | `branch_id`       | int     | Required when `branchFilter = isEqual` |
-| `customerFilter`  | string  | `isNotBlank`, `isBlank`, `isEqual`, `between` |
+| `branch_ids`      | int[]   | Required when `branchFilter = isIn` — array of branch IDs (`Op.in`) |
+| `customerFilter`  | string  | `isNotBlank`, `isBlank`, `isEqual`, `isIn`, `between` |
 | `customer_id`     | int     | Single customer |
+| `customer_ids`    | int[]   | Required when `customerFilter = isIn` — array of customer IDs (`Op.in`) |
 | `customer_idStart`/`customer_idEnd` | int | Customer range |
-| `statusFilter`    | string  | `isNotBlank`, `isBlank`, `isEqual` |
+| `statusFilter`    | string  | `isNotBlank`, `isBlank`, `isEqual`, `isIn` |
 | `status`          | string  | One of `Printed`, `Settled`, `Partially Settled` |
+| `statuses`        | string[]| Required when `statusFilter = isIn` — any subset of `Printed`, `Settled`, `Partially Settled`. Values outside the allowed set are silently dropped. |
 | `type`            | string  | `pdf` (default) or `excel` |
 
 ---
@@ -39,10 +42,19 @@ The Credit Note Report lists customer credit notes (refund documents) grouped by
 - **Status**: Only credit notes with `doc_status IN ('Printed', 'Settled', 'Partially Settled')` are included. `Raised` and `Void` are excluded.
 - **Sort**: Within each customer, credit notes are sorted by `doc_date` **descending** (latest first).
 - **Display filters**: The `Date Range` filter is pushed to the top of the report header, followed by Customer, Branch, and Status filters.
+- **UI default**: Date filter opens in **Between** mode so `startDate` and `endDate` inputs are visible on first load. Branch / Customer / Status default to **Is Equal**.
+- **Missing filter values = no restriction**: If the user opens the form and clicks Generate without picking any date / branch / customer / status, the report runs unrestricted (subject only to company scope and the default `doc_status IN ('Printed','Settled','Partially Settled')` rule). Previously, Between with missing dates returned `400` — this was removed so "empty form = full report" works as expected.
+- **Multi-value (`isIn`) filters**: Branch, Customer, and Status each support an `isIn` mode that maps to a Sequelize `Op.in` clause.
+  - Branch `isIn` renders a native multi-select of all branches (Ctrl/Cmd+click).
+  - Customer `isIn` renders the existing live search; each pick is appended as a removable chip.
+  - Status `isIn` renders a multi-select of `Printed`, `Settled`, `Partially Settled` — any value outside this set is dropped server-side.
+  - When `isIn` produces an empty list, the filter is treated as unset (no restriction applied) rather than returning zero rows.
 
 ---
 
 ## Columns
+
+Column order (12): `CN Date | CN No. | Issue By | Status | Billing Currency | Exch Rate | Billing Amount | Refund No. | Pax Name | Invoice No. | Original Segment | Refund Segment`.
 
 | Column            | Source |
 |-------------------|--------|
@@ -50,8 +62,9 @@ The Credit Note Report lists customer credit notes (refund documents) grouped by
 | CN No.            | `credit_notes.reference` |
 | Issue By          | `users.username` resolved from `credit_notes.buy_staff_id` (fallback: `System`) |
 | Status            | `credit_notes.doc_status` |
-| Billing Currency  | ISO code from `currency_codes` resolved via `credit_notes.currency_id` |
-| Billing Amount    | PKR-first display: `{pkr_amount} PKR ({original} {code})` for foreign currency; `{amount} PKR` for PKR |
+| Billing Currency  | For foreign CN: `{CODE} ({original_amount})` (e.g. `AUD (408.10)`). For PKR CN: `PKR`. |
+| Exch Rate         | `credit_notes.exchange_rate` (e.g. `281.00` when USD→PKR). For PKR CN displays `-`. |
+| Billing Amount    | Always PKR only — `{pkr_amount} PKR` (e.g. `77,105.67 PKR`). |
 | Refund No.        | `refunds.refund_no` |
 | Pax Name          | `refunds.passenger_name` |
 | Invoice No.       | `refunds.invoice_no` |
@@ -63,16 +76,20 @@ The Credit Note Report lists customer credit notes (refund documents) grouped by
 1. If `currency_id !== base_currency_id` (foreign currency):
    - `pkr_amount` = `billing_amount_base` (or `billing_amount × exchange_rate` if base missing).
    - `original_amount` = `billing_amount` (document currency).
-   - Display: `{pkr_amount} PKR ({original_amount} {CODE})` e.g. `77,105.67 PKR (7,105.00 AED)`.
+   - **Billing Currency cell**: `{CODE} ({original_amount})` (e.g. `AUD (408.10)`).
+   - **Exch Rate cell**: `credit_notes.exchange_rate` formatted to 2 decimals.
+   - **Billing Amount cell**: `{pkr_amount} PKR` (e.g. `77,105.67 PKR`).
 2. If `currency_id === base_currency_id` (PKR):
-   - Display: `{billing_amount} PKR`.
+   - **Billing Currency cell**: `PKR`.
+   - **Exch Rate cell**: `-`.
+   - **Billing Amount cell**: `{billing_amount} PKR`.
 3. **Totals / subtotals**: always sum `pkr_amount` only — totals are PKR-only.
 
 ---
 
 ## Data Flow
 
-1. **Fetch**: `db.customer.findAll` with nested include `Orders → refunds → credit_note` (alias `'credit_note'`). Credit notes filtered by `creditNoteWhere` (status + date + doc_status).
+1. **Fetch** (inverted — credit-note-first): `db.credit_note.findAll` with required includes `branch` (company scope via `branches.company_code = req.user.company_code`) and `refund → Order → customer`. All chain joins use integer foreign keys (`credit_notes.refund_id`, `refunds.orderId`, `orders.customer_id`, `credit_notes.branch_id`) — **not** the default `order.hasMany(refund, sourceKey: 'order_number')` varchar join, which would cross-join because order numbers are not unique across customers/companies. After fetch, CNs are grouped by `customer.id` in JS and shaped into the same `customers → Orders → refunds → credit_note` structure the EJS template expects.
 2. **Enrichment**:
    - Pre-fetch currency codes (`currency_codes`) → map `id → currency_code`.
    - Pre-fetch users referenced by `buy_staff_id` → map `id → username`.
@@ -106,9 +123,11 @@ The Credit Note Report lists customer credit notes (refund documents) grouped by
 
 ## Known Edge Cases
 
-1. **Duplicate CN references across companies**: Two different companies/branches can both use prefix `TT` and reach `doc_no = 5`, producing two credit notes with the same `reference` string (e.g. `TTCN00000005`). The current query does not scope by `company_code`, so results may leak across companies. Fix pending: filter customers/CNs by `req.user.company_code`.
-2. **Missing `buy_staff_id`**: falls back to `System`.
-3. **Missing `billing_amount_base` on foreign currency CN**: falls back to `billing_amount × exchange_rate`.
+1. **Duplicate CN references across companies** — _resolved_. The CN query is now company-scoped via a required nested include on `branch` where `company_code = req.user.company_code`, so cross-company CNs are dropped before any display logic runs. If `req.user.company_code` is missing, the endpoint returns `400` instead of silently returning unscoped data.
+2. **Cross-customer duplication (order_number collision)** — _resolved_. Previously the query started from `customer → Orders → refunds → credit_note`, and the `order.hasMany(refund)` association joins refunds by `order_number` (varchar). Order numbers are not unique (e.g. `KHSO00000001` exists 7 times across different customers), so a single refund cross-joined to every matching customer — dragging in cross-company customers. The query was inverted to start from `credit_note` and traverse `refund → Order → customer` via integer `belongsTo` FKs only.
+3. **Missing `buy_staff_id`**: falls back to `System`.
+4. **Missing `billing_amount_base` on foreign currency CN**: falls back to `billing_amount × exchange_rate`.
+5. **CN with `NULL branch_id`**: excluded by the company-scope join. Verified safe — all such CNs in current data have no `refund_id`, so they never reached the report anyway.
 
 ---
 
