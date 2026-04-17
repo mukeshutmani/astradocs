@@ -691,7 +691,29 @@ For Air services (including LCC imports), `invoice_date` is preserved throughout
 3. **Void & Re-generate**: Replacement invoice copies original `invoice_date` from voided invoice
 4. **Non-Air services** (Hotel, Tour, etc.): `invoice_date` is set from the "Select Date" picker as before
 
-**XO/Cost JE Transaction Date**: Uses `invoice_date` from the related Printed invoice (prefers Printed status over Raised). Falls back to `doc.created_at` if no invoice found.
+## JE Transaction Date (Issue Date Alignment)
+
+Each JE entry's `transaction_date` matches the **Issue Date shown on the invoice UI** so GL drill-down, reports, and invoice print all agree.
+
+**Resolution rule** (helper: `getInvoiceIssueDate(service, invoice)` in `journal.js`):
+
+| Service | JE transaction_date source |
+|---------|----------------------------|
+| Air (has `service.ticket_issue_date`) | `service.ticket_issue_date` |
+| Non-Air | `invoice.invoice_date` |
+
+Falls back to `document.created_at` if both are absent.
+
+**Applied in**:
+- `invoicePostingRules`
+- `voidInvoicePostingRules`
+- `regenerateInvoiceEntries`
+- On-demand void invoice JE (invoice controller flow)
+- `costingPostingRules` — uses the related Printed invoice's Issue Date
+- `voidCostingPostingRules` — same
+- `regenerateCostEntries` — same
+
+**Why it matters**: The printed invoice renders Issue Date as `ticket_issue_date` for Air (see `invoiceDocument.ejs`). Previously JE used only `invoice.invoice_date`, so Air rows showed a different date in the ledger than on the invoice, producing mismatches especially when `invoice.invoice_date` was set from a later timestamp than `ticket_issue_date`.
 
 ---
 
@@ -720,6 +742,26 @@ Supplier overpayments used in payment settlements generate JE entries using the 
 ## SST Rounding
 
 SST (Sales Service Tax) amount is rounded to 2 decimal places before exchange rate conversion to match the invoice display value and prevent rounding differences in JE totals.
+
+---
+
+## Hotel Rooms Multiplier
+
+Hotel invoices (service_type_id 7 = Hotel International, 8 = Hotel Domestic) store `invoice.price` as a **per-room** total with `invoice.quantity` usually `1`. The actual unit multiplier is `service_hotel.no_of_rooms`.
+
+To keep JE totals consistent with `invoice.total_price` (which is already the grand total across all rooms), the following entry types multiply by `no_of_rooms` for hotel services:
+
+| Entry | Formula (hotel) |
+|-------|-----------------|
+| `ASLE` | `price × quantity × no_of_rooms − markup × quantity` |
+| `DISC` | `discount% × price × quantity × no_of_rooms` |
+| `RBTE` | `rebate% × price × quantity × no_of_rooms` |
+
+Non-hotel services pass `no_of_rooms = 1` through the same code path, so behavior is unchanged.
+
+**Markup / PSFM / MARK**: Hotel markup is stored as an **invoice-level** amount (not per-room), so `PSFM` and `MARK` remain `markup × quantity` without the rooms multiplier.
+
+**Applied in**: `invoicePostingRules`, `voidInvoicePostingRules`, `regenerateInvoiceEntries`, and the on-demand void invoice JE generator. Helper: `getHotelRoomsMultiplier(service)` in `psback/services/journal.js`.
 
 ---
 
