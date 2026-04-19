@@ -691,29 +691,73 @@ For Air services (including LCC imports), `invoice_date` is preserved throughout
 3. **Void & Re-generate**: Replacement invoice copies original `invoice_date` from voided invoice
 4. **Non-Air services** (Hotel, Tour, etc.): `invoice_date` is set from the "Select Date" picker as before
 
-## JE Transaction Date (Issue Date Alignment)
+## JE Transaction Date & Filter (Each Document = Its Own Date)
 
-Each JE entry's `transaction_date` matches the **Issue Date shown on the invoice UI** so GL drill-down, reports, and invoice print all agree.
+**Rule**: every JE entry carries the **source document's own date**. When the user selects a "Specific Date" range in Generate System JE, the filter matches on that same date field — so whatever is printed on the document is what you'll find in the ledger and what the filter picks up.
 
-**Resolution rule** (helper: `getInvoiceIssueDate(service, invoice)` in `journal.js`):
+### Date source per document type
 
-| Service | JE transaction_date source |
-|---------|----------------------------|
-| Air (has `service.ticket_issue_date`) | `service.ticket_issue_date` |
-| Non-Air | `invoice.invoice_date` |
+| Document type | JE transaction_date | Specific-Date filter field |
+|---------------|---------------------|----------------------------|
+| Invoice | Document-level Issue Date (see below) | Document-level Issue Date |
+| XO / Cost | Document-level XO date (see below) | Document-level XO date |
+| Deposit (customer/supplier) | `deposit.created_at` | document-level filter (existing) |
+| Receipt / Settlement | `settlement.created_at` | existing |
+| Supplier Payment | `payment.created_at` | existing |
+| Credit Note | `creditNote.doc_date` (fallback `created_at`) | existing |
+| Debit Note | `debitNote.doc_date` (fallback `created_at`) | existing |
+| Refund | `refund.created_at` | existing |
+| Void reversals (invoice/cost) | Original document's own date (reversal cleanly cancels the original) | `updated_at` (when void happened) |
 
-Falls back to `document.created_at` if both are absent.
+### Invoice's document-level Issue Date
 
-**Applied in**:
-- `invoicePostingRules`
-- `voidInvoicePostingRules`
-- `regenerateInvoiceEntries`
-- On-demand void invoice JE (invoice controller flow)
-- `costingPostingRules` — uses the related Printed invoice's Issue Date
-- `voidCostingPostingRules` — same
-- `regenerateCostEntries` — same
+The printed invoice shows ONE Issue Date for the whole document, mirroring `invoices[0]` in `invoiceDocument.ejs`:
 
-**Why it matters**: The printed invoice renders Issue Date as `ticket_issue_date` for Air (see `invoiceDocument.ejs`). Previously JE used only `invoice.invoice_date`, so Air rows showed a different date in the ledger than on the invoice, producing mismatches especially when `invoice.invoice_date` was set from a later timestamp than `ticket_issue_date`.
+1. Group all invoice rows by `document_number` (same printed invoice = same document_number).
+2. Sort rows by `service_id` ASC.
+3. First row's Service has `ticket_issue_date` (Air) → use that.
+4. Else → use first row's `invoice.invoice_date`.
+
+All JE rows for the same invoice document share this single date — Air and non-Air alike.
+
+Helpers in `psback/services/journal.js`:
+- `buildInvoiceDocumentIssueDateMap(docs)` — builds the `document_number → Issue Date` map in memory.
+- `resolveInvoiceDocumentIssueDate(invoice, transaction, cache)` — looks up siblings in the DB when only one invoice is in hand (used by the on-demand void flow).
+- `filterDocsByIssueDateRange(docs, map, from, to)` — filters invoice document rows by the document-level Issue Date.
+
+### XO's document-level Issue Date
+
+Same shape as invoice, mirroring `costs[0]` logic in `costDocument.ejs`:
+
+1. Group cost rows by `document_number`.
+2. Sort rows by `service_id` ASC.
+3. First row's Service has `ticket_issue_date` (Air) → use that.
+4. Else → use first row's `cost.created_at`.
+
+All JE rows for the same XO share this single date — Air and non-Air alike.
+
+Helper: `buildCostDocumentIssueDateMap(docs)` in `psback/services/journal.js`.
+
+### Applied in
+
+Invoice paths (document-level Issue Date):
+- `invoicePostingRules` (main invoice JE)
+- `voidInvoicePostingRules` (void reversal)
+- `regenerateInvoiceEntries` (regeneration)
+- `generateVoidInvoiceJE` (on-demand void)
+
+Cost/XO paths (XO's own `cost.created_at`):
+- `costingPostingRules` (main cost JE)
+- `voidCostingPostingRules` (void cost reversal)
+- `regenerateCostEntries` (regenerate cost)
+
+### Example
+
+Invoice `KHIN...` has Issue Date **02-04** and contains 6 services (2 Air, 4 non-Air). JE rows for all 6 services get `transaction_date = 02-04`. Selecting the filter as 02-04 → 02-04 picks the entire invoice (including non-Air rows).
+
+XO `KHXO...` is recorded on **03-04** with 4 services. All 4 cost-side JE rows get `transaction_date = 03-04`. Filter 03-04 → 03-04 picks this XO.
+
+Deposit recorded today → JE dated today. Filter today → today picks it.
 
 ---
 
@@ -742,6 +786,26 @@ Supplier overpayments used in payment settlements generate JE entries using the 
 ## SST Rounding
 
 SST (Sales Service Tax) amount is rounded to 2 decimal places before exchange rate conversion to match the invoice display value and prevent rounding differences in JE totals.
+
+## AREC Multi-Round (Exchange Rate Rounding)
+
+Foreign-currency invoices (exchange_rate > 1) can produce 0.01 imbalances because AREC used a single round at the combined total while credit-side components (ASLE, STAX, PSFT, ATAX, PSFM, DISC, RBTE) each rounded individually after rate conversion. Summing many independently-rounded pieces can differ from rounding the combined total by up to one paisa per line.
+
+**Fix**: AREC is now calculated using the **same multi-round pattern** as the credit side. Each invoice component is rate-converted and rounded separately, then summed — so both sides of the JE use identical rounding behavior and balance exactly.
+
+```
+AREC = round(ASLE-part × rate) + round(PSFM × rate) + round(ATAX × rate)
+     + round(TFEE × rate) + round(STAX × rate)
+     − round(DISC × rate) − round(RBTE × rate)
+```
+
+Helper: `computeARECMultiRound(invoice, roomsMultiplier)` in `psback/services/journal.js`.
+
+**Applied in**: `invoicePostingRules`, `voidInvoicePostingRules`, `regenerateInvoiceEntries`, `generateVoidInvoiceJE`.
+
+**Why this catches bugs**: AREC is still calculated from invoice fields independently — not copied from generated credit entries. If a credit-side posting rule is missing in config (e.g., ASLE rule not configured), AREC will NOT silently adjust; the JE will be visibly unbalanced, surfacing the misconfig rather than hiding it.
+
+**Edge case note**: The post-switch `amount × rate` conversion is skipped for AREC (guarded by `rule.code !== 'AREC'`) because the helper already returns the base-currency amount.
 
 ---
 
