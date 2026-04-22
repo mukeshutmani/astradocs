@@ -162,10 +162,14 @@ For each row:
 - Convert numeric values (handle commas, spaces)
 - Process multiple tax columns (OT, RG, YQ, SP, XZ, N9, XT, YI, PK, PB, YR)
 - Lookup reference data:
-  - Cities (create if missing)
-  - Airlines
-  - Suppliers (using `supp_no` column)
-  - Flight classes
+  - Cities (create if missing) — global
+  - Airlines — global
+  - Suppliers (using `supp_no` column) — **scoped to the logged-in user's company** (via `supplier.user_id → user.company_code`)
+  - Flight classes — global
+  - Customers (using `customer_number`) — **scoped to the logged-in user's company** (via `customer.branch.company_code`)
+  - Duplicate ticket check — **scoped to the logged-in user's company** (via `service.user_id → user.company_code`)
+  - Order numbering — scoped to branches of the logged-in user's company
+  - Invoice & Cost document numbering — scoped to branches of the logged-in user's company
 
 ##### Step 6: Service Creation
 Creates interconnected records with enhanced data:
@@ -268,7 +272,7 @@ cost_tax = {
 { "type": "row_complete", "currentRow": 5, "totalRows": 100, "successCount": 5, "errorCount": 0, "ordersCreated": 2 }
 ```
 
-8. **row_duplicate**: Duplicate ticket detected (same airline + ticket number)
+8. **row_duplicate**: Duplicate ticket detected (same airline + ticket number, scoped to the logged-in user's company_code)
 ```json
 { "type": "row_duplicate", "currentRow": 5, "duplicate": { "row": 5, "pnr": "ABC123", "ticketNumber": "1234567890", "message": "Duplicate ticket" } }
 ```
@@ -568,7 +572,7 @@ The system supports the following mappable fields:
 - `markup` - Markup amount
 
 **Reference Fields**:
-- `customer_code` - Customer reference (REQUIRED)
+- `customer_code` - Customer reference (REQUIRED). The customer must exist in the logged-in user's company (resolved via `customer.branch.company_code = user.company_code`). A customer with the same `customer_number` in another company will NOT match, and import will fail with "Customer not found in your company".
 - `supplier_code` - Supplier reference
 - `booking_reference` - External booking ref
 - `invoice_number` - Invoice number
@@ -729,8 +733,8 @@ For a 2-sector route, the system creates:
    - Remove empty rows from Excel
 
 2. **Supplier Not Found**
-   - Check supplier exists with correct `supp_no`
-   - Create supplier before import
+   - Check supplier exists with correct `supp_no` **in the logged-in user's company** (scoped via `supplier.user_id → user.company_code`)
+   - A supplier with the same `supp_no` in another company will NOT match — create the supplier under the current company first
    - Verify supplier code spelling
 
 3. **Missing Data**
