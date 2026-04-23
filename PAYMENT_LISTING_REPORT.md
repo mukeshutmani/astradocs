@@ -99,6 +99,17 @@ keep row IF payment_settlement_payments.transfer_type !== 'account_to'
 Regular supplier payments have `transfer_type = NULL` so they pass through.
 Internal transfers contribute only the `account_from` leg.
 
+### Duplicate payment-row merge (applied in JS after filter)
+
+Within a single settlement, payment rows that are **identical** across all of
+`(pay_type_id, chart_of_account_id, bank_id, check_number, card_number, card_type_id, transfer_type)`
+are merged into one row with the amounts summed. Prevents the same Cash / Cheque / etc.
+from appearing multiple times when the user entered several Form-of-Payment rows
+with the same method and account.
+
+Rows that differ in any of those keys (e.g. Cash + Cheque, or two different cheque numbers)
+remain on separate lines.
+
 ### Per-Row Amounts
 
 ```
