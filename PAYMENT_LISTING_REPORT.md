@@ -9,7 +9,9 @@
 
 ## Overview
 
-The Payment Listing Report shows all payment settlements made to suppliers, including payment method details, bank/cash box information, exchange rates, and gain/loss amounts. Each row represents a payment method entry within a settlement. Settlements without payment method records are also shown with fallback values. A secondary **Advance Payments** section (from `supplier_deposits`) is shown below the settlements when matching records exist.
+The Payment Listing Report shows all **non-void** payment settlements made to suppliers, including payment method details, bank/cash box information, exchange rates, and gain/loss amounts. Each row represents a payment method entry within a settlement. Settlements without payment method records are also shown with fallback values. A secondary **Advance Payments** section (from `supplier_deposits`) is shown below the settlements when matching records exist.
+
+**Void settlements are excluded** from the report (April 2026). Internal-transfer settlements (with `transfer_type` set on `payment_settlement_payments`) collapse to a single row representing the source bank (the `account_from` leg) — the `account_to` leg is suppressed so transfers are not double-counted.
 
 ---
 
@@ -50,23 +52,24 @@ The Payment Listing Report shows all payment settlements made to suppliers, incl
 |--------|--------|-------------|
 | Payment No. | `payment_settlement.payment_number` | Payment document number |
 | Payee Name | `supplier.supp_name` | Supplier name (blank if no supplier) |
-| Date/Doc No. | `payment.created_at` + XO number | Payment date / costing document number |
+| Date/Doc No. | `payment_settlement.created_at` + XO number | Voucher date of the settlement (not the payment row's `created_at`) / costing document number |
 | Adj Date | `payment_settlement.adjustment_date` | Only shown when adjustment date mode enabled |
-| Status | `payment_settlement.status` | Printed or Void |
-| Void Amount | Amount if status=Void | Blank for Printed payments |
+| Status | `payment_settlement.status` | Always "Printed" (void is excluded) |
+| Void Amount | — | Always blank (void is excluded) |
 | Form of Payment | `pay_type_form.label` | Cheque, Cash, Card, etc. |
-| Bank/Cash Box | `chart_of_account.description` + `key_account` | Account description and number |
-| Cheque Date | `payment.created_at` | Payment creation date |
-| Paid Amount | Amount if status=Printed | Blank for Void payments |
+| Bank/Cash Box | `chart_of_account.description` + `key_account` | Account description and number. For internal transfers this is the **source** bank (`account_from` leg). |
+| Cheque Date | `payment_settlement.created_at` | Voucher date of the settlement (same as Date/Doc No.) |
+| Paid Amount | Amount | Amount of this payment row (PKR) |
 | Overpayment | `payment_settlement.overpayment` | Overpayment amount |
 | Ex. Rate | `currency_code.exchange_rate` (via currency) | Exchange rate (1.00 for PKR) |
 | Gain/Loss Amt | `payment.gain_loss_amount` | Currency gain/loss |
-| Base Amt | `amount × exchange_rate` (0 if Void) | Amount in base currency (PKR) |
+| Base Amt | `amount × exchange_rate` | Amount in base currency (PKR) |
 
 ### Date/Doc No. Format
 
-- If both payment date and XO number exist: `{date}/{xoNumber}`
+- If both settlement date and XO number exist: `{settlementDate}/{xoNumber}`
 - Otherwise: whichever is available
+- **Date** = `payment_settlement.created_at` (the voucher date, same as what prints on the settlement document). Previously used `payment_settlement_payment.created_at`, which drifted whenever a payment row was re-inserted on edit — fixed April 2026.
 - XO Number sourced from: `payment_settlement_costs[0] → cost → service → document (type='costing')`
 
 ### Fallback for Settlements Without Payment Records
@@ -82,30 +85,38 @@ When a settlement has no `payment_settlement_payment` entries:
 
 ## Calculation Logic
 
+### Settlement-level filter (applied in the Sequelize query)
+
+```
+payment_settlement.status != 'Void'
+```
+
+### Payment-row filter (applied in JS after fetch)
+
+```
+keep row IF payment_settlement_payments.transfer_type !== 'account_to'
+```
+Regular supplier payments have `transfer_type = NULL` so they pass through.
+Internal transfers contribute only the `account_from` leg.
+
 ### Per-Row Amounts
 
 ```
 amountLocal = payment.amount × (currency_code.exchange_rate || 1)
 
-If status = 'Printed':
-  Paid Amount = amountLocal
-  Void Amount = ""
-  Base Amt = amountLocal
-
-If status = 'Void':
-  Paid Amount = ""
-  Void Amount = amountLocal
-  Base Amt = 0
+Paid Amount = amountLocal
+Base Amt   = amountLocal
+Void Amount = ""   (always — void is excluded)
 ```
 
 ### Summary Totals
 
 ```
-Total Paid Amount = sum(all Printed paid_amount values)
-Total Void Amount = sum(all Void void_amount values)
-Net Amount PKR = Total Paid Amount - Total Void Amount
-Total Paid Amount PKR = Net Amount PKR
+Total Paid Amount     = sum(all paid_amount values)
+Total Paid Amount PKR = Total Paid Amount
 ```
+
+(Previous "Total Void Amount" and "Net Amount PKR" rows were removed because void is excluded.)
 
 ---
 

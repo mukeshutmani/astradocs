@@ -119,10 +119,24 @@ Free-text input for payment remarks. Stored in `payment_settlement.remarks`.
 Up to 5 payment methods can be added.
 
 **Fields per payment**:
-- Payment Method (pay_type_id): Cash, Cheque, Card, Wire Transfer, etc.
+- Payment Method (pay_type_id): sourced from `pay_type_forms` table. Current methods:
+  - 1 — Cash
+  - 2 — Cheque (requires Cheque Number)
+  - 3 — Credit Card (requires Card Type, Card Number)
+  - 4 — Voucher
+  - 5 — GL Account (requires GL Account selection)
+  - 6 — Direct Deposit
+  - 7 — Debit Card (requires Card Type, Card Number)
+  - 11 — Online Payment
 - Currency: Default PKR
 - Amount: Payment amount in selected currency
 - Additional fields based on payment method: Bank, Cheque No., Card Type, Card No., Voucher No., GL Account, Account No., Cash Box, Client Reference
+
+**Conditional field behavior** (`psfront/src/components/Receipt/FormOfPayment.jsx`):
+- `pay_type_id === 2` (Cheque) → Cheque Number input is shown and required
+- `pay_type_id === 3` or `7` (Credit/Debit Card) → Card Type + Card Number inputs shown
+- `pay_type_id === 5` (GL Account) → GL Account selector shown, fetched via `getGlSettleAccounts`
+- Online Payment (id 11) does NOT require a cheque number (fixed April 2026 — previously miswired as cheque)
 
 ### 9. Overpayment Details (Conditional)
 
