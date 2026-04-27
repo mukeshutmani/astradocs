@@ -19,7 +19,7 @@ The Payment Listing Report shows all **non-void** payment settlements made to su
 
 ### Frontend Component
 
-**File**: `psfront/src/pages/Report/PaymentListingReport.jsx`
+**File**: `psfront/src/pages/Report/PaymentSettlement.jsx`
 
 **Filters**:
 - Date Range: =, <, <=, >, >=, <>, between (with adjustment date mode support)
@@ -55,7 +55,6 @@ The Payment Listing Report shows all **non-void** payment settlements made to su
 | Date/Doc No. | `payment_settlement.created_at` + XO number | Voucher date of the settlement (not the payment row's `created_at`) / costing document number |
 | Adj Date | `payment_settlement.adjustment_date` | Only shown when adjustment date mode enabled |
 | Status | `payment_settlement.status` | Always "Printed" (void is excluded) |
-| Void Amount | — | Always blank (void is excluded) |
 | Form of Payment | `pay_type_form.label` | Cheque, Cash, Card, etc. |
 | Bank/Cash Box | `chart_of_account.description` + `key_account` | Account description and number. For internal transfers this is the **source** bank (`account_from` leg). |
 | Cheque Date | `payment_settlement.created_at` | Voucher date of the settlement (same as Date/Doc No.) |
@@ -117,7 +116,6 @@ amountLocal = payment.amount × (currency_code.exchange_rate || 1)
 
 Paid Amount = amountLocal
 Base Amt   = amountLocal
-Void Amount = ""   (always — void is excluded)
 ```
 
 ### Summary Totals
@@ -177,6 +175,18 @@ Scoped via `payment_settlement → user → where: { company_code: req.user.comp
 
 ---
 
+## Excel / PDF Parity
+
+Both outputs render the same columns in the same order:
+
+`Payment No.` → `Payee Name` → `Date/Doc No.` → `Adj Date` *(only when adjustment date mode is on)* → `Status` → `Form of Payment` → `Bank/Cash Box` → `Cheque Date` → `Paid Amount` → `Overpayment` → `Ex. Rate` → `Gain/Loss Amt` → `Base Amt`
+
+Total rows ("Total Paid Amount" and "Total Paid Amount PKR") render with a merged label cell spanning all columns up to (but not including) `Paid Amount`, then the amounts in the trailing numeric columns. This matches the EJS PDF template's grand-total split logic.
+
+The Advance Payments section uses the same column-order parity between PDF and Excel (see "Advance Payments Section" below).
+
+---
+
 ## Advance Payments Section
 
 Below the payment settlements table, an optional **Advance Payments** section is rendered when supplier advance payment records exist matching the same filters.
@@ -194,17 +204,20 @@ Filtered by:
 
 | Column | Source | Description |
 |--------|--------|-------------|
-| Date | `supplier_deposit.created_at` | Payment creation date (DD MMM YYYY) |
 | Voucher No | `supplier_deposit.payment_number` | Advance payment document number |
-| Transaction | `supplier.supp_name` / `bank.name` | Supplier name and bank name joined with " / " |
-| Description | `supplier_deposit.remarks` | Free-text remarks |
-| Debit | `supplier_deposit.amount` | Original deposit amount (money paid out) |
-| Credit | `amount - current_amount` | Utilized/settled portion |
+| Payee Name | `supplier.supp_name` | Supplier name |
+| Date | `supplier_deposit.created_at` | Payment creation date (DD MMM YYYY) |
+| Status | `supplier_deposit.status` | Deposit status (Void deposits are filtered out, so this is typically "Printed") |
+| Form of Payment | `pay_type_form.label` (via `pay_type_id`) | Cheque, Cash, Card, etc. |
+| Bank/Cash Box | `bank.name` or `supplier_deposit.cash_box` | Bank name if paid via bank; otherwise the cash box label. Blank if neither is set. |
+| Cheque Number | `supplier_deposit.check_number` | Cheque number (blank if not a cheque) |
+| Description | `supplier_deposit.remarks` | Free-text remarks. Falls back to literal `"Advance Payment to Supplier"` when the DB value is empty — matches the fallback used on the printable Supplier Deposit document (`supplierDepositDocument.ejs`). |
+| Ex. Rate | `currency.exchange_rate` (via `currency_id`) | Exchange rate (1.00 for PKR). Defaults to 1 when no currency is linked. |
+| Paid Amount | `supplier_deposit.amount` | Original deposit amount (money paid out) |
 
 ### Totals
 
-- **Total Debit**: Sum of all debit values
-- **Total Credit**: Sum of all credit values
+- **Total Paid Amount**: Sum of all paid amount values
 
 ### Display Behavior
 
@@ -228,7 +241,7 @@ Verified with 3 payment settlements (TTPY00000001-03):
 
 | File | Purpose |
 |------|---------|
-| `psfront/src/pages/Report/PaymentListingReport.jsx` | Frontend UI |
+| `psfront/src/pages/Report/PaymentSettlement.jsx` | Frontend UI (filter form only; history table removed April 2026) |
 | `psback/controllers/report.controller.js` | Controller logic (~line 7962) |
 | `psback/views/pages/reports/settlement.ejs` | PDF template |
 | `psfront/src/api/report.js` | API client |
