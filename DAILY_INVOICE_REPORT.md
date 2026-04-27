@@ -79,8 +79,9 @@ Each row in the main table comes from one invoice record.
 | Discount | `Σ invoice_discount.discount_amount × invoice.exchange_rate` |
 | Sales | `Gross − Discount` |
 | Cost | See formula below |
-| Profit/Loss | `Sales − Cost` (blank when Cost is `N/A`) |
-| Margin | `(Profit/Loss ÷ Sales) × 100 %` (blank when no Cost or Sales = 0) |
+| SST | Sales-side SST charged on the invoice, in PKR. `invoice.transaction_fee × invoice.sst / 100 × invoice.exchange_rate`. Same formula used by `invoice.controller.js` when computing `total_price`. Shown even when Cost is `N/A`. |
+| Profit/Loss | `Sales − Cost − SST` (blank when Cost is `N/A`) |
+| Margin | `(Profit/Loss ÷ Sales) × 100 %` based on the SST-adjusted Profit/Loss (blank when no Cost or Sales = 0) |
 | TCID | `service.order.tcid.name` |
 
 ### Cost formula
@@ -90,11 +91,17 @@ When `service.cost` exists:
 ```
 cost_per_unit = published_rate
               − (published_rate × commission / 100)
+              + free_of_cost                                    ← extra charges
               + Σ cost_taxes.tax_amount
               + (published_rate × commission / 100) × (sst / 100)
 
 Cost (PKR) = cost_per_unit × cost.quantity × cost.exchange_rate
 ```
+
+This matches the stored `costs.total_costing` value used elsewhere in the system (and in `dailySaleReportWithRefund`).
+
+- `free_of_cost` is the **extra charges** field (despite the legacy column name) — added after commission is subtracted.
+- `cost_taxes` is loaded via a nested include on the `cost` association; without that include the tax sum silently becomes 0 and Cost is understated.
 
 If `service.cost` is null → `Cost = "N/A"`, `Profit/Loss = null`, `Margin = null`.
 
@@ -132,13 +139,13 @@ All amount columns (Gross, Discount, Sales, Cost, Profit/Loss) are **always show
 
 ## Totals row
 
-The footer row sums the PKR-converted numeric columns (`gross`, `discount`, `sales`, `cost`, `profile_or_loss`) across all fetched invoices. The `currency` cell is labelled `"Total (PKR)"`; margin is left blank (it is not a simple sum).
+The footer row sums the PKR-converted numeric columns (`gross`, `discount`, `sales`, `cost`, `sst`, `profile_or_loss`) across all fetched invoices. The `currency` cell is labelled `"Total (PKR)"`; margin is left blank (it is not a simple sum).
 
 ## Output
 
 ### PDF
 
-Rendered through a dedicated template `views/pages/reports/daily-invoice-report.ejs` and converted with `createPdf(html, true)` — **A4 Landscape**. Text columns (Company, Invoice Number, Status, Date, Client Name, Currency, TCID) are **left-aligned**; amount columns are right-aligned. Uploaded to MinIO under `TPDI<timestamp>.pdf`.
+Rendered through a dedicated template `views/pages/reports/daily-invoice-report.ejs` and converted with `createPdf(html, true)` — **A4 Landscape**. Text columns (Company, Invoice Number, Status, Date, Client Name, Currency, TCID) are **left-aligned**; amount columns (Gross, Discount, Sales, Cost, SST, Profit/Loss, Margin) are right-aligned. Uploaded to MinIO under `TPDI<timestamp>.pdf`.
 
 ### Excel
 
@@ -151,9 +158,9 @@ Built with ExcelJS, worksheet name `"Daily Invoice Report"`. Layout:
 5. Printed By
 6. Print Date/Time
 7. Blank row (frozen split at row 7)
-8. Column headers (grey fill, bold)
-9. Data rows — amount columns right-aligned and formatted with thousands separators and two decimals
-10. Total row (bold, light-grey fill)
+8. Column headers (grey fill, bold) — alignment matches PDF: text columns left, numeric columns (incl. Margin) right.
+9. Data rows — same alignment rules as the header. Numeric columns (Gross, Discount, Sales, Cost, SST, Profit/Loss) get thousands separators and two decimals. Margin keeps its `%` string. Empty cells render as empty (not `0.00`).
+10. Total row (bold, light-grey fill) — alignment and formatting match the data rows; Margin and unused text cells stay blank.
 
 Column widths auto-fit between 10 and 50 characters.
 
