@@ -69,11 +69,10 @@ Each row in the main table comes from one invoice record.
 
 | Column | Source / formula |
 |---|---|
-| Company | `service.order.branch.company.name` |
+| Customer Name | `service.order.customer.customer_name` (was previously a separate `Client Name` column at position 5; now the leading column. The old `Company` column was dropped because the report is already company-scoped.) |
 | Invoice Number | `invoice.invoice_number` or `document.document_number` |
 | Status | Full status text (`Printed`, `Settled`, `Raised`, `Void`). `Partially Settled` is shortened to `PS` to fit the column. |
 | Date | Effective invoice date — see *Ticket issue date* below. Formatted `DD MMM YYYY`. |
-| Client Name | `service.order.customer.customer_name` |
 | Currency | `currency_code.currency_code` |
 | Gross | `invoice.total_price × invoice.exchange_rate` (`total_price` already includes SST and line quantity) |
 | Discount | `Σ invoice_discount.discount_amount × invoice.exchange_rate` |
@@ -145,7 +144,7 @@ The footer row sums the PKR-converted numeric columns (`gross`, `discount`, `sal
 
 ### PDF
 
-Rendered through a dedicated template `views/pages/reports/daily-invoice-report.ejs` and converted with `createPdf(html, true)` — **A4 Landscape**. Text columns (Company, Invoice Number, Status, Date, Client Name, Currency, TCID) are **left-aligned**; amount columns (Gross, Discount, Sales, Cost, SST, Profit/Loss, Margin) are right-aligned. Uploaded to MinIO under `TPDI<timestamp>.pdf`.
+Rendered through a dedicated template `views/pages/reports/daily-invoice-report.ejs` and converted with `createPdf(html, true)` — **A4 Landscape**. Text columns (Customer Name, Invoice Number, Status, Date, Currency, TCID) are **left-aligned**; amount columns (Gross, Discount, Sales, Cost, SST, Profit/Loss, Margin) are right-aligned. Uploaded to MinIO under `TPDI<timestamp>.pdf`.
 
 ### Excel
 

@@ -1,9 +1,9 @@
 # AR Ageing Analysis Detail Report - Technical Documentation
 
-**Version**: 1.6
-**Date**: April 2026
+**Version**: 1.7
+**Date**: 2026-04-28
 **Author**: System Analysis
-**Status**: Stable - All Critical Issues Resolved
+**Status**: Stable — All Critical Issues Resolved (multi-currency aggregation fixed in v1.7)
 
 ---
 
@@ -442,6 +442,35 @@ Minor confusion for users comparing PDF and Excel outputs.
 14. **PDF Template Foreign Currency Label** - Replaced hardcoded `invoice.currency === '145'` (USD-only) with `invoice.original_currency` check. Now labels all foreign currencies (USD, SAR, AED, CNY, etc.).
 15. **N+1 Query Elimination** - Replaced per-customer queries (3 queries × N customers) with 3 batch queries using `Op.in` for all customer IDs. Results grouped by `customer_id` in JavaScript. Reduces database round-trips from ~1500 to 3 for 500 customers.
 16. **API Timeout Increase** - Backend report route timeout increased from 30s to 5 minutes. Frontend axios timeout for report APIs increased to 5 minutes. Prevents `ERR_EMPTY_RESPONSE` on large datasets.
+
+### Completed Fixes (Version 1.7) — 2026-04-28
+
+17. **Multi-Currency Invoice Aggregation** — Fixed a critical bug where a single `invoice_number` spanning multiple invoice rows in different currencies would be massively inflated. Previously the grouping loop summed every row's raw `total_price` and then applied the **first** row's `exchange_rate` to the entire sum. For an invoice with three SAR rows (rate 78.42) and one PKR row (rate 1), the PKR row was being multiplied by 78.42 — producing a total ~18× the correct value.
+
+    **Example (KHIN00000093)**:
+    | Row | total_price | currency | rate | Correct PKR | Old behavior |
+    |-----|-------------|----------|------|-------------|--------------|
+    | 6223 | 36,000 | SAR (3) | 78.42 | 2,823,120 | 2,823,120 |
+    | 6224 | 10,000 | SAR (3) | 78.42 | 784,200 | 784,200 |
+    | 6225 | 6,500 | SAR (3) | 78.42 | 509,730 | 509,730 |
+    | 6230 | 1,217,000 | PKR (110) | 1.00 | 1,217,000 | **1,217,000 × 78.42 = 95,437,140** |
+    | **Total** | | | | **5,334,050** | **99,554,190** |
+
+    **Root cause**: Group accumulator stored raw `totalAmount` (mixed-currency sum) and downstream conversion used `invoice.exchange_rate` from the first row. The implicit assumption that all rows of the same `invoice_number` share a currency is invalid — multi-service invoices commonly mix PKR with foreign currencies.
+
+    **Fix** (`psback/controllers/report.controller.js` ~line 15271):
+    1. Added `resolveRowPkrRate(row)` helper that returns `{ rate, currencyLabel }` per row using the row's own `currency` + `exchange_rate` (with fallback to `cachedConvertToPKRAR`).
+    2. Group accumulator now tracks `totalAmountPKR`, `totalAmountRaw`, `totalSettledPKR`, `totalSettledRaw`, and a `currencyLabels` Set. Each row's contribution is converted to PKR at accumulation time using *its own* rate.
+    3. Settlements (which live in `receipt_settlement_invoices` without their own currency/rate) are converted using the parent invoice row's rate, since each settlement is recorded against a specific invoice row.
+    4. Removed the old "second multiplication" block — totals are already PKR after accumulation.
+    5. `original_currency` is `'Mixed'` for invoices spanning multiple currencies (single-currency invoices keep their currency code as before). `original_outstanding` falls back to the PKR value when the invoice is mixed.
+
+    **Edge cases handled**:
+    - Single-currency invoice (most common case) → identical math to the old code, just computed at row level.
+    - Foreign currency with stored `exchange_rate > 1` → uses stored rate (frozen at print time).
+    - Foreign currency with no usable stored rate → falls back to `cachedConvertToPKRAR` lookup, then to rate 1 (preserves prior fallback behavior).
+    - Settlements deduped across rows by `id` so a settlement reachable through multiple cost rows is counted once at the row's rate where first encountered.
+    - Voided settlements (`receipt_settlement.status === 'Void'`) still excluded.
 
 ### Remaining Improvements
 

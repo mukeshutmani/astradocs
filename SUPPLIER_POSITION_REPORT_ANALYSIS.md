@@ -259,4 +259,75 @@ When `adjustmentDateMode = false`:
 
 ---
 
-**Last Updated**: March 2026 — Initial creation, includes frozen exchange rate logic
+## 10. Recent Updates and Fixes
+
+### 10.1 Duplicate Debit Notes Per Refund — Opening Balance Fix (2026-04-28)
+
+**Problem**: Opening Balance B/F in the next-period Supplier Position report did not match the previous-period Net Balance. Same root cause as the Supplier Account Statement bug fixed in `SUPPLIER_ACCOUNT_STATEMENT_ANALYSIS.md` section 16.5.
+
+**Root cause**:
+1. A refund (e.g. refund_id 434) had **multiple `debit_notes` rows** linked via `debit_note.refund_id`: one with `doc_status='Printed'` (the valid one) and one with `doc_status='Void'` (a stale/cancelled one).
+2. The Sequelize association `refund.hasOne(debit_note, { foreignKey: 'refund_id' })` is non-deterministic when multiple rows match — without an `ORDER BY`, MySQL may return either row first.
+3. In one query Sequelize picked the Printed DN (refund counted), in another query it picked the Void DN (refund skipped) → opening balance and current period totals diverged.
+
+**Solution Implemented**:
+1. Added `where: { doc_status: { [Op.notIn]: ['Void', 'Voided'] } }` to both `debit_note` includes (main query and historical query). With `required: false`, Sequelize emits a `LEFT JOIN ... ON dn.refund_id = r.id AND dn.doc_status NOT IN ('Void','Voided')`, so only valid debit notes are joined and `refund.debit_note` is always either the Printed one or `null`.
+2. Added a guard in both refund loops: `if (refund.debit_note_generated && !refund.debit_note) <skip>;` — skips refunds where a DN was generated but no valid (non-Void) DN exists. Preserves the prior behavior of skipping all-Void refunds without falling through to the date-only path.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js`
+  - Main query refund→debit_note include (~line 16240): added `where` filter
+  - Historical query refund→debit_note include (~line 16454): added `where` filter
+  - Historical refund loop (~line 16545): added `!refund.debit_note` guard (uses `continue`)
+  - Current period refund reduce (~line 16737): added `!refund.debit_note` guard (uses `return sum`)
+
+**Edge cases handled**:
+- Refund with one Printed + one Void DN → joins only Printed → counted ✓
+- Refund with all Void DNs → join yields null → skipped ✓
+- Refund with no DN (debit_note_generated=0) → caught by existing first guard ✓
+- Refund with one Printed DN only → unchanged behavior ✓
+
+---
+
+### 10.2 Historical Payments Date Filter + Shared-Settlement Double-Counting Fix (2026-04-28)
+
+**Problem**: Opening Balance B/F in the Supplier Position Report did not match the previous-period Net Balance for the same supplier. Example: Mar 1-30 Net = 38,130, but Mar 31-Apr 30 Opening = 26,130 (off by 12,000). The Supplier Account Statement showed the correct opening for the same supplier and dates — only the Position Report was wrong.
+
+**Root cause** (two distinct bugs in the historical payment loop):
+
+1. **Missing date filter**: The historical payment loop iterated `cost.payment_settlement_costs → settlement → payment_settlement_payments` for every historical service and summed every payment's amount. Unlike the Account Statement equivalent (which gates each settlement on `settlement_date < startDate`), this loop had **no date check** — so payments dated *after* `startDate` (which only become reachable because the cost they are linked to is historical) were being subtracted from the opening balance.
+
+2. **Shared-settlement double-counting**: When a single payment settles multiple costs of the same supplier, the same `payment_settlement_payment` row is reachable through each cost's `payment_settlement_costs`. The loop visited it once per cost and summed it each time, inflating the payment total.
+
+**How the 12,000 discrepancy was produced (TESTSUPPLIER, supplier_id 591)**:
+- Historical costs before Mar 31: 5111 (20,000) + 5430 (6,930) + 5686 (11,200) = **38,130**
+- Payment 792 (TTPY00000029, Rs 6,000, dated **April 6**) settled both cost 5111 and cost 5430 via settlement 877
+- The loop visited it twice (once per cost) and added 6,000 + 6,000 = **12,000** to historical payments — even though the payment was *after* the report's startDate
+- Resulting opening: 38,130 − 12,000 = **26,130** (matched the bug exactly)
+
+The same shared-settlement double-counting also inflated the **current period** "Less Payments" (28,000 shown vs. 22,000 actual = 6,000 + 16,000), so the dedup fix was applied to the current-period loop as well.
+
+**Solution Implemented**:
+
+1. **Historical payment loop (~line 16523)**: Added the same `settlementDate < startDate` gate that Account Statement uses, respecting `adjustmentDateMode` (use `adjustment_date` when posted, `created_at` otherwise). Also added a `Set<payment.id>` so each `payment_settlement_payment` is summed at most once per supplier even if it appears under multiple costs.
+
+2. **Current-period payment loop (~line 16692)**: Added the same `Set<payment.id>` dedup. Date filtering was already correct; only the dedup was missing.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js`
+  - Historical payment loop (~line 16523): added date filter + dedup Set
+  - Current-period payment loop (~line 16692): added dedup Set
+
+**Edge cases handled**:
+- One payment settles multiple costs → counted once ✓
+- Payment after startDate but cost before startDate → not counted as historical ✓
+- `adjustmentDateMode` true with NULL adjustment_date → falls back to `created_at` for the date check ✓
+- Payment with NULL `id` (defensive) → still counted, since dedup only triggers on non-null ids ✓
+
+**Note**: The Account Statement opening-balance and current-period payment loops have the **same shared-settlement double-counting vulnerability** — they just hadn't triggered for the suppliers tested so far (no shared settlements in those data sets). If similar inflation appears in Account Statement payments for a supplier with shared settlements, the same dedup `Set` should be applied at:
+- `report.controller.js` ~line 10688 (Account Statement opening balance payment loop)
+- `report.controller.js` ~line 11229 (Account Statement current period voucher loop)
+
+---
+
+**Last Updated**: 2026-04-28 — Section 10.1 (duplicate debit notes per refund), Section 10.2 (historical payments missing date filter + shared-settlement dedup)

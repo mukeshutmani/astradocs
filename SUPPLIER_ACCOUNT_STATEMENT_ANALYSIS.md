@@ -903,6 +903,59 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 **Files Modified**:
 - `/mnt/c/Codes/Powersuite/psback/controllers/report.controller.js` (lines 8886-8888, 9003-9004, 9210-9212, 9050-9053)
 
+### 16.5 Duplicate Debit Notes Per Refund — Opening Balance Fix (2026-04-28)
+
+**Problem**: Opening Balance B/F in the next-period report did not match the previous-period Net Balance. Example: March net = 290,663.92, but April Opening Balance = 371,314.00, off by exactly 80,650.08 (one refund's PKR amount).
+
+**Root cause**:
+1. A single refund (e.g. refund_id 434) had **multiple `debit_notes` rows** linked via `debit_note.refund_id`: one with `doc_status='Printed'` (the valid one) and one with `doc_status='Void'` (a stale/cancelled one).
+2. The Sequelize association `refund.hasOne(debit_note, { foreignKey: 'refund_id' })` is non-deterministic when multiple rows match — without an `ORDER BY`, MySQL may return either row first.
+3. In the **current period** main query, Sequelize happened to pick the Printed debit note → refund counted in `Less Refund Invoices` ✓.
+4. In the **opening balance** historical query, Sequelize picked the Void debit note → refund skipped by `if (debitNoteStatus === 'Void') return;` → 80,650.08 not subtracted from opening → opening inflated.
+
+**Solution Implemented**:
+1. Added `where: { doc_status: { [Op.notIn]: ['Void', 'Voided'] } }` to both `debit_note` includes (main query and historical query). With `required: false`, Sequelize emits a `LEFT JOIN ... ON dn.refund_id = r.id AND dn.doc_status NOT IN ('Void','Voided')`, so only valid debit notes are joined and `refund.debit_note` is always either the Printed one or `null`.
+2. Added a guard in both refund loops: `if (refund.debit_note_generated && !refund.debit_note) return;` — skips refunds where a DN was generated but no valid (non-Void) DN exists. Preserves the prior behavior of skipping all-Void refunds (e.g. refund 433/450) without falling through to the date-only path.
+3. Both periods now use the same deterministic logic, so opening balance and current-period totals stay consistent across reports.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js`
+  - Main query refund→debit_note include (~line 10406): added `where` filter
+  - Historical query refund→debit_note include (~line 10610): added `where` filter
+  - Opening balance refund loop (~line 10717): added `!refund.debit_note` guard
+  - Current period refund loop (~line 11117): added `!refund.debit_note` guard
+
+**Edge cases handled**:
+- Refund with one Printed + one Void DN → joins only Printed → counted ✓
+- Refund with all Void DNs → join yields null → skipped ✓
+- Refund with no DN (debit_note_generated=0) → caught by existing first guard ✓
+- Refund with one Printed DN only → unchanged behavior ✓
+
+**Note**: A separate Customer Account Statement query (~line 16435) has the same `refund→debit_note` include pattern without the Void filter. If similar discrepancies appear in customer statements, the same fix should be applied there.
+
+### 16.6 Shared-Settlement Payment Double-Counting Fix (2026-04-28)
+
+**Problem**: Vouchers section in the Supplier Account Statement was showing the same payment row multiple times when one settlement settled multiple costs of the same supplier, and the **Less Payments** total was inflated by the duplicates. The same vulnerability existed in the historical (opening balance) payment loop.
+
+**Root cause**: Payments are reached via `service.Cost.payment_settlement_costs → payment_settlement → payment_settlement_payments`. When a single `payment_settlement` row settles multiple costs of the same supplier, each cost's `payment_settlement_costs` array points to that same settlement, so the same `payment_settlement_payment` row is reachable through every one of those costs. The previous loops did not dedupe by `payment.id`, so the payment was summed once per cost it touched and pushed into the voucher table once per cost.
+
+**Solution Implemented**:
+1. **Opening balance payment loop (~line 10688)**: Declared a `Set<payment.id>` outside the per-service loop and added an early-return inside the inner `payments.forEach` so each payment is subtracted from `openingBalance` (and added to `debugPaymentTotal`) at most once for the supplier.
+2. **Current-period vouchers loop (~line 11229)**: Same `Set<payment.id>` declared before the services loop, with a guard inside the inner `payments.forEach` so each payment is added to `lessPayments` and pushed into `vouchers` at most once.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js`
+  - Opening balance: declared `historicalCountedPaymentIds` (~line 10645) and added dedup guard in the `payments.forEach` (~line 10700)
+  - Current period: declared `countedVoucherPaymentIds` (~line 10915) and added dedup guard in the voucher `payments.forEach` (~line 11275)
+
+**Edge cases handled**:
+- One payment settles N costs of the same supplier → counted once, single voucher row ✓
+- Payment with NULL id (defensive) → still counted, dedup only triggers on non-null ids ✓
+- Different payments with the same amount but different ids → both counted (dedup is on id, not amount) ✓
+- A second supplier's report run reuses fresh Sets (declared per-supplier scope) ✓
+
+**Note**: The matching fix was applied to the Supplier Position Report at the same time (see `SUPPLIER_POSITION_REPORT_ANALYSIS.md` section 10.2), which also had a missing date filter on its historical payment loop.
+
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -939,5 +992,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: March 2026 — Added Adjustment Date Mode, Advance Payments section, Journal Voucher section, updated formulas, updated refund ticket columns
+**Last Updated**: 2026-04-28 — Section 16.5 (duplicate Void+Printed debit notes per refund) and Section 16.6 (shared-settlement payment double-counting in vouchers and opening balance)
 
