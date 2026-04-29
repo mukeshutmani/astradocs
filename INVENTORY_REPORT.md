@@ -1,12 +1,13 @@
 # Inventory Report - Technical Documentation
 
-**Version**: 1.12
+**Version**: 1.13
 **Date**: April 2026
 **Author**: System Analysis
 **Status**: Stable - Verified
 
 **Changelog**:
-1. **v1.12** — Right-side columns (Commission and Cost) were still being clipped at A3 landscape because the default 9px font + 2px/4px padding made each cell wider than needed. Added a new `compactTable: true` flag plus a `.compact-table` CSS class that drops the table to 8px on screen / 7px in print and tightens padding to 1px/2px. All 21 columns now fit on a single A3 landscape page without truncation. Other reports sharing `report1.ejs` are unaffected (they don't pass the flag).
+1. **v1.13** — Right-side columns were still clipped because A3 wasn't actually being applied. `psback/services/pdf.js` hardcodes `pageSize: 'A4'` in the wkhtmltopdf options, and wkhtmltopdf ignores the `@page size` CSS rule when a `pageSize` option is set. Fixed by passing an explicit `{ pageSize: 'A3' }` as the third argument to `createPdf(html, true, { pageSize: 'A3' })`. The `pageSize` EJS flag I added in v1.8 is now effectively redundant but harmless — kept for documentation/intent.
+2. **v1.12** — Right-side columns (Commission and Cost) were still being clipped at A3 landscape because the default 9px font + 2px/4px padding made each cell wider than needed. Added a new `compactTable: true` flag plus a `.compact-table` CSS class that drops the table to 8px on screen / 7px in print and tightens padding to 1px/2px. All 21 columns now fit on a single A3 landscape page without truncation. Other reports sharing `report1.ejs` are unaffected (they don't pass the flag).
 2. **v1.11** — Status column now shows just `"Ticketed"` or `"Refunded"`. The refund document number is no longer appended in parentheses (user preference — diverges from the Inventory tab, which still shows `Refunded (TTRF…)`). The XO Number column is the place to look up the costing document number; refund document numbers are not surfaced anywhere on this report.
 2. **v1.10** — Three layout/data fixes:
    1. Supplier No column was empty: code was reading `service?.Supplier` (capital S) but the Sequelize association registered in `models/index.js` uses lowercase `supplier`, so the accessor returned `undefined`. Fixed to read `service?.supplier?.supp_no` (with a defensive fallback to capital). Also renamed the column key from `supplier_no` to `supp_no` so the header reads **"Supp No"**.
