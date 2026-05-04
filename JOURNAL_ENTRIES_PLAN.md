@@ -13,7 +13,7 @@ Implementation of automated journal entries generation based on financial consul
 - ✅ Cost document processing (Exchange Orders)
 - ✅ Deposit and settlement processing
 - ✅ Manual trigger via "Generate System JE" function
-- ✅ Regenerate functionality for existing batches
+- ⚠️ Regenerate functionality for existing batches (UI button hidden — underlying regen logic produces incorrect entries; backend endpoint still exists but not user-accessible until fixed)
 - ✅ je_generated tracking to prevent duplicates
 - ✅ All journal entry types (AREC, ASLE, ATAX, PSFM, PSFT, STAX, CSAL, CSTX, IATA, DISC, RBTE)
 - ✅ Updated journal.js with correct calculations for all scenarios
@@ -111,6 +111,32 @@ Located in `/psback/services/journal.js`:
 4. **DISC/RBTE calculate on invoice.price only** - Not price + markup
 5. **Period Assignment**: Entries are assigned to periods based on their transaction_date
 6. **Batch Narrative**: Each batch includes the period identifier in its narrative
+7. **Void entries use void date, not original document date** - All void posting-rules functions set `transaction_date = <doc>.updated_at` so reversal entries land in the period the void actually happened. Each respective void controller explicitly writes `updated_at = NOW()` when voiding, making this reliable as long as the voided document is not subsequently edited (which is the normal case). Applied to **all 11 void paths**:
+   - `voidInvoicePostingRules` → `invoice.updated_at`
+   - `voidCostingPostingRules` (XO) → `costing.updated_at`
+   - `voidCreditNotePostingRules` → `creditNote.updated_at`
+   - `voidDebitNotePostingRules` → `debitNote.updated_at`
+   - `voidDepositPostingRules` → `deposit.updated_at`
+   - `voidSupplierDepositPostingRules` → `deposit.updated_at`
+   - `voidSettlementPostingRules` (5 entry types) → `settlement.updated_at`
+   - `voidCreditNotePaymentPostingRules` → `payment.updated_at`
+   - `voidExpensePaymentPostingRules` → `payment.updated_at`
+   - `voidSupplierPaymentPostingRules` (5 entry types) → `payment.updated_at`
+   - `voidInternalTransferPostingRules` (ACTO + ACFR) → `payment.updated_at`
+
+8. **Manual JE voiding now appends reversal entries to the SAME batch** - When a Manual JE batch is voided via `voidBatch` (`journal_entry.controller.js`), the controller:
+   - Marks the batch `status = 'Void'`.
+   - Fetches all original entries (skipping any row whose description starts with `VOID REVERSAL -`, to protect against double-reversal).
+   - Inserts a reversal row for each — same batch_id, same accounts and analysis codes, **debit/credit swapped**, `transaction_date = NOW()`, description prefixed `VOID REVERSAL - <original_description>`.
+   - All steps run inside a single DB transaction so partial failures roll back cleanly.
+   - Net effect on accounts is zero; original rows stay untouched (audit trail preserved).
+
+9. **Display behavior for voided Manual JE batches** (frontend `JournalEntriesImproved.jsx`):
+   - When a batch contains any row whose description starts with `VOID REVERSAL -`, the view-mode table hides the original rows and shows ONLY the reversal rows.
+   - Totals (Total Debit / Total Credit) recalculate against the displayed (reversal-only) set.
+   - The `VOID REVERSAL` token in the description is rendered in red (`text-red-600 font-semibold`) so the void state is visually obvious.
+   - EditMode keeps the full list to avoid index mismatches in the edit handlers.
+   - Original rows remain in the database for audit; only the UI hides them when voided.
 
 ```javascript
 // Key calculations
@@ -179,11 +205,11 @@ case 'RBTE':
 - **Automatic Period Assignment**: Entries are grouped into periods based on transaction dates
 - **Multiple Batches**: One batch created per period within the selected date range
 
-### 4. Regenerate Existing Batches
-- Select an existing journal batch
-- Click "Regenerate" button
-- System will recalculate all entries with current rules
-- Period assignment is preserved during regeneration
+### 4. Regenerate Existing Batches (TEMPORARILY DISABLED)
+- The "Regenerate" UI button and batch-selection checkboxes are currently hidden
+- Reason: regeneration was producing incorrect entries (e.g., duplicate posting types, missing service-type filter on debit notes)
+- Workaround: null `je_generated` on the source documents and delete the batch from the UI, then run "Generate System JE" fresh
+- The backend `regenerateBatches` endpoint still exists for when the UI is restored after the underlying logic is fixed
 
 ### 5. Verification
 - Check journal batch for balanced entries

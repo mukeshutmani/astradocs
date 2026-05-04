@@ -8,6 +8,7 @@ The journal entries system has been significantly improved to provide a better u
 ### 1. Visual Design Enhancements
 - **Modern Card Layout**: Clean, professional card design with gradient header
 - **Color-Coded Balance Status**: Green for balanced, red for unbalanced entries
+- **Unbalanced Batch Indicator (Listing)**: On the Journal Entries listing, batch numbers turn red with an `AlertCircle` icon when total Debit ≠ total Credit. Hovering shows a tooltip with debit, credit, the exact difference, AND the offending document number(s) (entries grouped by `analysis_code1` whose per-doc debit ≠ credit). Up to 5 docs are listed; remaining counts shown as "+N more". Voided batches and empty batches are excluded from the check.
 - **Status Badges**: Visual indicators for batch type and edit mode
 - **Hover Effects**: Improved interactivity with hover states on rows
 - **Professional Typography**: Better font hierarchy and spacing
@@ -86,7 +87,8 @@ The journal entries system has been significantly improved to provide a better u
 ## Files Modified
 1. `/psfront/src/pages/GeneralEntries/JournalEntryBatch/JournalEntriesImproved.jsx` - New improved component
 2. `/psfront/src/pages/GeneralEntries/JournalEntryBatch/AddJournalEntryBatch.jsx` - Updated to use new component
-3. `/psback/controllers/journal_entry.controller.js` - Enhanced data handling
+3. `/psfront/src/pages/GeneralEntries/JournalEntryBatch/JournalEntryBatches.jsx` - Listing now shows unbalanced batches with red Batch No. + AlertCircle icon + tooltip
+4. `/psback/controllers/journal_entry.controller.js` - Enhanced data handling; `journalEntryBatches` now also returns `total_debit`, `total_credit`, and `is_balanced` per batch
 
 ## Benefits
 - **Reduced Errors**: Better validation prevents incorrect entries
