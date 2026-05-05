@@ -124,19 +124,44 @@ Located in `/psback/services/journal.js`:
    - `voidSupplierPaymentPostingRules` (5 entry types) → `payment.updated_at`
    - `voidInternalTransferPostingRules` (ACTO + ACFR) → `payment.updated_at`
 
-8. **Manual JE voiding now appends reversal entries to the SAME batch** - When a Manual JE batch is voided via `voidBatch` (`journal_entry.controller.js`), the controller:
-   - Marks the batch `status = 'Void'`.
-   - Fetches all original entries (skipping any row whose description starts with `VOID REVERSAL -`, to protect against double-reversal).
-   - Inserts a reversal row for each — same batch_id, same accounts and analysis codes, **debit/credit swapped**, `transaction_date = NOW()`, description prefixed `VOID REVERSAL - <original_description>`.
+8. **Manual JE voiding creates a NEW reversal batch with the next sequential number** - When a Manual JE batch is voided via `voidBatch` (`journal_entry.controller.js`), the controller:
+   - Accepts an optional `void_date` (YYYY-MM-DD) from the request body. Validates it's not before the original batch's `dated` value. Anchors the parsed date at noon (`<date>T12:00:00`) to avoid timezone-shift edge cases when computing the period. Falls back to `new Date()` if not provided.
+   - Marks the original batch `status = 'Void'` (entries untouched — audit trail preserved).
+   - Generates the next sequential `JV` batch number across the company (same logic as `createJournalEntryBatch`).
+   - Creates a NEW Manual JE batch with that number: `status = 'Posted'`, `dated = <voidDate>`, `journal_entry_period = MMYYYY of voidDate`, narrative `"Reversal of voided batch <original_batch_no>"`.
+   - Inserts reversal rows into the NEW batch — same accounts, analysis codes, and gl_entity_id; **debit/credit swapped**; `transaction_date = <voidDate>`; description prefixed `VOID REVERSAL - <original_description>`.
    - All steps run inside a single DB transaction so partial failures roll back cleanly.
-   - Net effect on accounts is zero; original rows stay untouched (audit trail preserved).
+   - GL trial balance shows both batches netting to zero.
+   - API response includes both `batch_no` (original) and `reversal_batch_no` (new) so the UI can surface the new number to the user via toast.
 
-9. **Display behavior for voided Manual JE batches** (frontend `JournalEntriesImproved.jsx`):
-   - When a batch contains any row whose description starts with `VOID REVERSAL -`, the view-mode table hides the original rows and shows ONLY the reversal rows.
-   - Totals (Total Debit / Total Credit) recalculate against the displayed (reversal-only) set.
+   **Frontend (`JournalEntryBatches.jsx`):** clicking the red `Void` button opens an AlertDialog with a `DateInput` field; `minDate` is set to the original batch's `dated` value so users cannot back-date the reversal before the JE existed. Selected date is sent as `void_date` in the API request body.
+
+**Customer/Supplier-driven Document picker in Manual JE editor** (`JournalEntriesImproved.jsx`)
+- Backend: `GET /journalEntry/related-documents?customer_id=X` returns invoices via `documents → service → order.customer_id`; `?supplier_id=Y` returns costing/XO documents via `documents → service.supplier_id`. Both queries:
+  - Apply **company isolation**: `order.branch_id` must belong to the requesting user's company (`req.user.company_code`).
+  - Apply **status filter**: skips closed/cancelled docs.
+    - Invoices: exclude `Void`, `Raised`, `Settled` (keep `Printed`, `Partially Settled`)
+    - Costs: exclude `Void`, `Raised`, `Paid` (keep `Printed`, `Partially Paid`)
+  - Return deduped `{ document_number, type }`.
+- Frontend: when a row's Customer/Supplier is selected, the Document column switches from a free-form text input to a `SearchableSelect` whose options are that entity's invoices (customer) or XOs (supplier). Options are cached per `${entityType}-${entityId}` key so the same entity isn't fetched twice across rows. Clearing or changing the entity also clears the previously linked `analysis_code1`. If no entity is selected, the column falls back to the original free-form text input.
+
+9. **Display behavior for voided/reversal Manual JE batches** (frontend `JournalEntriesImproved.jsx`):
+   - The view-mode table only hides rows when the batch contains any row whose description starts with `VOID REVERSAL -`. With the current "new batch" model:
+     - Original voided batch contains only originals → all shown normally.
+     - Reversal batch contains only `VOID REVERSAL -` rows → all shown.
    - The `VOID REVERSAL` token in the description is rendered in red (`text-red-600 font-semibold`) so the void state is visually obvious.
-   - EditMode keeps the full list to avoid index mismatches in the edit handlers.
-   - Original rows remain in the database for audit; only the UI hides them when voided.
+   - EditMode keeps the full list to avoid index mismatches in edit handlers.
+
+10. **Listing-page indicators for voided + reversal batches** (frontend `JournalEntryBatches.jsx`):
+    - A `reversalByOriginal` map is built from the batch list — for every batch whose narrative starts with `Reversal of voided batch <original>`, it maps `<original> → <reversal_batch_no>` so the UI can surface the link in both directions.
+    - **Voided original (Manual JE, `status === 'Void'`, narrative does NOT start with `Reversal of voided batch `)**:
+      - Actions cell: empty (no pill, no button — the Voided pill lives on the reversal batch instead).
+      - Batch No cell: blue link with a red `Ban` icon and a red hover tooltip: `This JE is already voided — Reversed in batch: <reversal_batch_no>` (or `Reversal batch not found in current view` if the reversal isn't in the loaded list).
+    - **Reversal/void JE (narrative starts with `Reversal of voided batch <original>`)**:
+      - Actions cell: red `Voided` pill (this is the JE that represents the void operation).
+      - Batch No cell: blue link with an amber `AlertCircle` icon and an amber hover tooltip: `Reversal batch — This JE is the reversal of voided batch: <original_batch_no>`.
+    - **Unbalanced batches** (any type): red link with red `AlertCircle` icon and red tooltip showing debit/credit/difference and offending docs.
+    - Other Manual JE batches: standard `Void` button + simple blue Batch No link.
 
 ```javascript
 // Key calculations
