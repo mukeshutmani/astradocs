@@ -1,12 +1,20 @@
 # Inventory Report - Technical Documentation
 
-**Version**: 1.13
+**Version**: 1.21
 **Date**: April 2026
 **Author**: System Analysis
 **Status**: Stable - Verified
 
 **Changelog**:
-1. **v1.13** — Right-side columns were still clipped because A3 wasn't actually being applied. `psback/services/pdf.js` hardcodes `pageSize: 'A4'` in the wkhtmltopdf options, and wkhtmltopdf ignores the `@page size` CSS rule when a `pageSize` option is set. Fixed by passing an explicit `{ pageSize: 'A3' }` as the third argument to `createPdf(html, true, { pageSize: 'A3' })`. The `pageSize` EJS flag I added in v1.8 is now effectively redundant but harmless — kept for documentation/intent.
+1. **v1.21** — Three combined fixes: (a) Bumped `.compact-table` font to 12px in BOTH the screen rule (was 8px) AND the `@media print` rule (was 11px). The earlier 11px-only print fix didn't show up in the PDF because wkhtmltopdf wasn't reliably applying `@media print`, so the 8px screen rule was leaking through. Setting both rules to the same size guarantees consistent output regardless of media mode. Excel data + Grand Total fonts also bumped 10pt → 11pt. (b) Added `supp_no` to the width maps (`75px → 95px` after the 12px-font rebalance) so Supplier No isn't oversized. (c) Widened all explicit-width columns to fit 12px content cleanly (dates 65→75, ticket_no 70→80, invoice/supp/xo IDs 70-75 → 90-95, etc.) — no truncation expected at the new font size.
+2. **v1.20** — Added `supp_no: 75px / 14` plus widened narrow columns slightly (dates 55→65px, PNR/Status 55→60px, P-Type/P-Code 35→40px, IATA 60→65px, Itinerary 50→55px) and bumped print font 7px → 9px. *(Note: the print-font bump silently failed to take effect — see v1.21 above for the actual fix.)*
+3. **v1.19** — Tightened more columns. `issue_date` 60px → 55px. Added `dep_date` (55px), `arr_date` (55px), `invoice_no` (70px), `xo_number` (70px) to the width maps. Excel widths mirrored. Now 13 of the 21 columns have explicit widths; the remaining 8 share the leftover A3 landscape width.
+2. **v1.18** — Two readability tweaks: (a) bumped the `.compact-table` print font from 7px → 9px and padding from 1px/2px → 2px/3px so the PDF is easier to read. (b) Extended `columnWidths` / `excelColumnWidths` with six more narrow columns (PNR, Status, P-Type, P-Code, Itinerary, IATA) so they don't waste horizontal space.
+2. **v1.17** — Narrowed three columns that were taking too much horizontal room: Ticket Date (60px), Ticket Num (70px), Air-Code (40px). Implemented via a new `columnWidths` map passed to the EJS template (the template's existing per-column width logic picks it up) and a parallel `excelColumnWidths` override that runs after the Excel auto-fit loop so the explicit widths win. Pure cosmetic — no data logic touched.
+2. **v1.16** — Two cosmetic tweaks: (a) shortened six column header labels — `Ticket Issue Date → Ticket Date`, `Ticket Number → Ticket Num`, `Airline Code → Air-Code`, `Ticket Status → Status`, `Product Type → P-Type`, `Product Code → P-Code`. (b) Added `iata_no` to `rightAlignKeys` so the IATA column data is right-aligned in both PDF and Excel. No data logic, key names, filters, or includes touched.
+2. **v1.15** — Added a per-key right-align override. The 6 amount columns — `publish_fare`, `tax_amount`, `commision`, `wht`, `extra_charges`, `cost` — now render right-aligned in both PDF and Excel even though `alignAllLeft: true` is still in effect for everything else. Implemented via a new `rightAlignKeys` list that the EJS template and Excel writer both consult before falling back to the global alignment setting. Other reports sharing `report1.ejs` are unaffected (they don't pass `rightAlignKeys`).
+2. **v1.14** — Reordered the 21 columns to match the user's preferred layout (Ticket Issue Date first, IATA last) and refreshed every header label via the existing `columnHeaders` override map. No data logic, no key renames, no Sequelize changes — purely a cosmetic reorder + relabel. The new column order is documented in the Columns table below.
+2. **v1.13** — Right-side columns were still clipped because A3 wasn't actually being applied. `psback/services/pdf.js` hardcodes `pageSize: 'A4'` in the wkhtmltopdf options, and wkhtmltopdf ignores the `@page size` CSS rule when a `pageSize` option is set. Fixed by passing an explicit `{ pageSize: 'A3' }` as the third argument to `createPdf(html, true, { pageSize: 'A3' })`. The `pageSize` EJS flag I added in v1.8 is now effectively redundant but harmless — kept for documentation/intent.
 2. **v1.12** — Right-side columns (Commission and Cost) were still being clipped at A3 landscape because the default 9px font + 2px/4px padding made each cell wider than needed. Added a new `compactTable: true` flag plus a `.compact-table` CSS class that drops the table to 8px on screen / 7px in print and tightens padding to 1px/2px. All 21 columns now fit on a single A3 landscape page without truncation. Other reports sharing `report1.ejs` are unaffected (they don't pass the flag).
 2. **v1.11** — Status column now shows just `"Ticketed"` or `"Refunded"`. The refund document number is no longer appended in parentheses (user preference — diverges from the Inventory tab, which still shows `Refunded (TTRF…)`). The XO Number column is the place to look up the costing document number; refund document numbers are not surfaced anywhere on this report.
 2. **v1.10** — Three layout/data fixes:
@@ -197,31 +205,31 @@ One row per `service_passenger` record with a `ticket_number`. If a service has 
 
 ## Columns
 
-Rendered left-to-right in this order (21 columns total):
+Rendered left-to-right in this order (21 columns total). Display labels are set explicitly via the `columnHeaders` override map — the keys themselves stay in snake_case.
 
-| # | Column (key) | Source | Description |
-|---|--------------|--------|-------------|
-| 1 | `ticket_no` | `service_passenger.ticket_number` | Ticket number of the passenger. |
-| 2 | `airline` | `service.airline_code.airline_ticket_prefix` | Airline ticket prefix (e.g. `PK`, `EK`). |
-| 3 | `issue_date` | `service.ticket_issue_date` | Ticket issue date, formatted `DD MMM YYYY`. Renders in the header as "Issue Date". |
-| 4 | `supp_no` | `service.supplier.supp_no` | Supplier code for the ticket issuer (e.g. BSP supplier). Empty string if service has no supplier. Header rendered as **"Supp No"** via the column-header override map. |
-| 5 | `pnr` | `service.pnr` | GDS PNR (Passenger Name Record) — typically a 6-character alphanumeric code. |
-| 6 | `extra_charges` | `cost.free_of_cost` | Extra charges on the cost (the `free_of_cost` field is repurposed for extra charges). **Shown as its own column; intentionally NOT folded into the `cost` column.** |
-| 7 | `wht` | `commissionAmount × cost.sst / 100` | Withholding tax — WHT percent (stored in `cost.sst`) applied to the commission amount. |
-| 8 | `iata_no` | `service.Order.branch.iata_number` | IATA number of the issuing branch (used for BSP settlement). |
-| 9 | `xo_number` | `cost.Document.document_number` with explicit `where: { document_type: 'costing' }` on the include | XO (costing) document number ONLY. Empty if the cost has no costing document. The explicit `where` prevents invoice numbers from leaking when an invoice happens to share the cost's id. Header rendered as **"XO Number"**. |
-| 10 | `p_code` | `service.service_type.product_code` | Product code (e.g. 12, 13 for air products). Header rendered as **"P-Code"**. |
-| 11 | `product_type` | `service.service_type.type` | Product type description. |
-| 12 | `status` | computed from `service.refunds` | `"Ticketed"` if no printed refund covers this ticket, otherwise `"Refunded"` (no refund document number is appended — diverges from the Inventory tab on purpose). See "Filter Logic → Ticket Status" for the detection rules. |
-| 13 | `invoice_no` | `service.Invoice.invoice_number` (falls back to `service.Invoices[0].invoice_number`) | Invoice number that this ticket is billed on. |
-| 14 | `passenger_name` | `passenger.passenger_name` | Passenger's full name. |
-| 15 | `dep_date` | `service_flights[0].departure_date` | Departure date of the first flight leg, `DD MMM YYYY`. |
-| 16 | `arr_date` | `service_flights[last].arrival_date` | Arrival date of the last flight leg, `DD MMM YYYY`. |
-| 17 | `itinerary` | `service_flights[0].city_from_code.code` + `/` + `service_flights[last].city_to_code.code` | Origin → final destination city codes (e.g. `KHI/DXB`). |
-| 18 | `publish_fare` | `cost.published_rate` | Published (gross) rate per unit. |
-| 19 | `tax_amount` | Σ `cost.cost_taxes[i].tax_amount` | Sum of regular cost taxes (excludes WHT). |
-| 20 | `commision` | `cost.published_rate × cost.commission / 100` | Commission amount (from agent's cost). |
-| 21 | `cost` | See formula below | Unit cost after commission deduction, plus taxes and WHT. |
+| # | Display label | Key | Source | Description |
+|---|---------------|-----|--------|-------------|
+| 1 | Ticket Date | `issue_date` | `service.ticket_issue_date` | Ticket issue date, formatted `DD MMM YYYY`. |
+| 2 | Ticket Num | `ticket_no` | `service_passenger.ticket_number` | Ticket number of the passenger. |
+| 3 | Air-Code | `airline` | `service.airline_code.airline_ticket_prefix` | Airline ticket prefix (e.g. `PK`, `EK`). |
+| 4 | PNR | `pnr` | `service.pnr` | GDS PNR (Passenger Name Record) — typically a 6-character alphanumeric code. |
+| 5 | Status | `status` | computed from `service.refunds` | `"Ticketed"` if no printed refund covers this ticket, otherwise `"Refunded"` (no refund document number is appended). See "Filter Logic → Ticket Status" for the detection rules. |
+| 6 | Invoice Number | `invoice_no` | `service.Invoice.invoice_number` (falls back to `service.Invoices[0].invoice_number`) | Invoice number that this ticket is billed on. |
+| 7 | P-Type | `product_type` | `service.service_type.type` | Product type description. |
+| 8 | P-Code | `p_code` | `service.service_type.product_code` | Product code (e.g. 12, 13 for air products). |
+| 9 | Passenger Name | `passenger_name` | `passenger.passenger_name` | Passenger's full name. |
+| 10 | Departure Date | `dep_date` | `service_flights[0].departure_date` | Departure date of the first flight leg, `DD MMM YYYY`. |
+| 11 | Arrival Date | `arr_date` | `service_flights[last].arrival_date` | Arrival date of the last flight leg, `DD MMM YYYY`. |
+| 12 | Itinerary | `itinerary` | `service_flights[0].city_from_code.code` + `/` + `service_flights[last].city_to_code.code` | Origin → final destination city codes (e.g. `KHI/DXB`). |
+| 13 | Supplier No | `supp_no` | `service.supplier.supp_no` | Supplier code for the ticket issuer (e.g. BSP supplier). Empty string if service has no supplier. |
+| 14 | XO Number | `xo_number` | `cost.Document.document_number` with explicit `where: { document_type: 'costing' }` on the include | XO (costing) document number ONLY. Empty if the cost has no costing document. The explicit `where` prevents invoice numbers from leaking when an invoice happens to share the cost's id. |
+| 15 | Publish Fare | `publish_fare` | `cost.published_rate` | Published (gross) rate per unit. |
+| 16 | Tax Amount | `tax_amount` | Σ `cost.cost_taxes[i].tax_amount` | Sum of regular cost taxes (excludes WHT). |
+| 17 | Commission | `commision` | `cost.published_rate × cost.commission / 100` | Commission amount (from agent's cost). The key has a typo (`commision`) preserved for compatibility; the override map forces the header to display "Commission". |
+| 18 | WHT | `wht` | `commissionAmount × cost.sst / 100` | Withholding tax — WHT percent (stored in `cost.sst`) applied to the commission amount. |
+| 19 | Extra Charges | `extra_charges` | `cost.free_of_cost` | Extra charges on the cost (the `free_of_cost` field is repurposed for extra charges). **Shown as its own column; intentionally NOT folded into the `cost` column.** |
+| 20 | Total Cost | `cost` | See formula below | Unit cost after commission deduction, plus taxes and WHT. |
+| 21 | IATA | `iata_no` | `service.Order.branch.iata_number` | IATA number of the issuing branch (used for BSP settlement). |
 
 All numeric columns are rounded to 2 decimal places (`.toFixed(2)`) before rendering.
 
@@ -243,12 +251,27 @@ The controller passes a `columnHeaders` map to the EJS template (and the same ma
 
 | Key | Override |
 |-----|----------|
-| `supp_no` | `Supp No` |
-| `p_code` | `P-Code` |
+| `issue_date` | `Ticket Date` |
+| `ticket_no` | `Ticket Num` |
+| `airline` | `Air-Code` |
 | `pnr` | `PNR` |
-| `wht` | `WHT` |
-| `iata_no` | `IATA No` |
+| `status` | `Status` |
+| `invoice_no` | `Invoice Number` |
+| `product_type` | `P-Type` |
+| `p_code` | `P-Code` |
+| `passenger_name` | `Passenger Name` |
+| `dep_date` | `Departure Date` |
+| `arr_date` | `Arrival Date` |
+| `itinerary` | `Itinerary` |
+| `supp_no` | `Supplier No` |
 | `xo_number` | `XO Number` |
+| `publish_fare` | `Publish Fare` |
+| `tax_amount` | `Tax Amount` |
+| `commision` | `Commission` |
+| `wht` | `WHT` |
+| `extra_charges` | `Extra Charges` |
+| `cost` | `Total Cost` |
+| `iata_no` | `IATA` |
 
 Keys not in the map fall through to the default capitalize-each-word behavior. The map is also additive — other reports don't pass it, so they keep their existing headers.
 
@@ -315,13 +338,15 @@ The PDF/Excel header shows:
 ## PDF Output
 
 1. Rendered from `pages/reports/report1.ejs` (shared generic template).
-2. Variables passed: `data1`, `data1Total`, `header`, **plus five Inventory-Report-specific flags**:
-   1. `pageSize: 'A3'` — switches `@page size` from the default `A4 landscape` to `A3 landscape` (more width for 21 columns).
-   2. `alignAllLeft: true` — every header and data cell renders `text-align: left` (overrides the template's default of right-aligning numeric columns).
-   3. `prominentTitle: true` — adds a `.prominent` class to the `.page-subtitle` div, bumping the font size to 16px so the report title stands out.
-   4. `compactTable: true` — adds a `.compact-table` class to the `<table>` element, reducing font-size to 8px on screen / 7px in print and padding to 1px/2px so all 21 columns fit without right-side clipping (A3 alone wasn't enough).
-   5. `columnHeaders` — per-key header override map for acronyms and hyphenated names (`P-Code`, `PNR`, `WHT`, `IATA No`, `XO Number`, `Supp No`).
-3. All five flags are **additive** in `report1.ejs` — other reports that don't pass them keep their original behavior.
+2. Variables passed: `data1`, `data1Total`, `header`, **plus seven Inventory-Report-specific flags**:
+   1. `pageSize: 'A3'` — switches `@page size` from the default `A4 landscape` to `A3 landscape` (more width for 21 columns). Note: actual page size is also explicitly forced via `createPdf(html, true, { pageSize: 'A3' })` because wkhtmltopdf ignores CSS `@page` when its own `pageSize` option is set.
+   2. `alignAllLeft: true` — every header and data cell renders `text-align: left` by default.
+   3. `rightAlignKeys: ['publish_fare', 'tax_amount', 'commision', 'wht', 'extra_charges', 'cost']` — per-key override that right-aligns these 6 amount columns even though `alignAllLeft` is true. The template's `cellAlign` helper checks this list first.
+   4. `prominentTitle: true` — adds a `.prominent` class to the `.page-subtitle` div, bumping the font size to 16px so the report title stands out.
+   5. `compactTable: true` — adds a `.compact-table` class to the `<table>` element, reducing font-size to 8px on screen / 7px in print and padding to 1px/2px so all 21 columns fit without right-side clipping (A3 alone wasn't enough).
+   6. `columnHeaders` — per-key header override map for the 21 final display labels.
+   7. `columnWidths` — per-key width hints applied as inline `style="width: …"` on the matching `<th>` elements. Currently set for 13 columns: Ticket Date (55px), Ticket Num (70px), Air-Code (40px), PNR (55px), Status (55px), Invoice Number (70px), P-Type (35px), P-Code (35px), Departure Date (55px), Arrival Date (55px), Itinerary (50px), XO Number (70px), IATA (60px). The Excel writer mirrors this with a parallel `excelColumnWidths` map (in ExcelJS character units) applied after the auto-fit loop.
+3. All seven flags are **additive** in `report1.ejs` — other reports that don't pass them keep their original behavior.
 4. The template's `data1Total` block renders the Grand Total as a bold `.total-row` at the end of the table.
 5. Generated via `createPdf(html, true)` (wkhtmltopdf pipeline).
 6. File name: `<TPIR-number>.pdf`.

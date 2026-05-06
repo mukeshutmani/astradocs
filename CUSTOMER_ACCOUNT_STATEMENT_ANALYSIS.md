@@ -440,7 +440,7 @@ Columns:
 - Debit (debit amount)
 - Credit (credit amount)
 
-**Filtering**: Only `batch_type = 'Manual JE'`, status `Open` or `Posted`, matched by `gl_entity_id` = customer_id.
+**Filtering**: Only `batch_type = 'Manual JE'`, status `Open` or `Posted`, matched by `gl_entity_id` = customer_id. Rows whose `description` starts with `VOID REVERSAL -` are excluded so a voided Manual JE nets back to zero in the report (the original entries are already excluded via the parent batch's Void status filter).
 
 ### Summary Section
 ```
@@ -630,6 +630,7 @@ Shows manual journal entry adjustments for customer accounts:
 - Columns: Date, Voucher No, Reference, Description, Payment Method, Debit, Credit
 - Added to both opening balance (historical) and period calculations
 - Debit increases balance, Credit decreases balance
+- **Void reversal rows excluded**: rows whose `description` starts with `VOID REVERSAL -` are filtered out. Combined with the parent batch's `status NOT IN ('Void')` filter, this means a voided Manual JE contributes zero to the report (original entries excluded via voided batch status; reversal entries excluded via description). Applies to both PDF and Excel output since both render from the same `journalEntries` data.
 
 ### 10.0.5 Credit Note Currency Handling (UPDATED)
 Foreign currency detection uses the invoice's exchange rate via the refund→invoice chain as the source of truth:
