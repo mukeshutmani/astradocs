@@ -1,9 +1,9 @@
 # AR Ageing Analysis Summary Report - Technical Documentation
 
-**Version**: 1.2
-**Date**: March 2026
+**Version**: 1.4
+**Date**: 2026-05-11
 **Author**: System Analysis
-**Status**: Stable - Verified
+**Status**: Stable — PDF/Excel parity (v1.4), Detail/Summary parity (v1.3)
 
 ---
 
@@ -92,9 +92,31 @@ The controller passes each customer with:
 Negative values in all columns use accounting bracket format with red color:
 - Example: `-60,000` displays as `(60,000)` in red
 - Applied to: All ageing bucket cells, Total Outstanding cell, and Grand Total row
-- CSS class `.negative` applies `color: red`
+- PDF uses CSS class `.negative` (`color: red`); Excel uses the `FFFF0000` font color on the same cells.
 
 This follows standard accounting conventions where brackets indicate credit balances or negative amounts.
+
+---
+
+## PDF / Excel Parity
+
+Both outputs render the same 9 columns in the same order with the same labels and same formatting rules:
+
+| # | Column | Source / formula |
+|---|--------|------------------|
+| 1 | Customer | `{customer_number}-{customer_name}` |
+| 2 | Average Days | `total_aging` (avg days overdue across that customer's overdue invoices) |
+| 3 | Current | `ageing.current` |
+| 4 | 1-30 Days | `ageing['1to30days']` |
+| 5 | 31-60 Days | `ageing['31to60days']` |
+| 6 | 61-90 Days | `ageing['61to90days']` |
+| 7 | 91-120 Days | `ageing['91to120days']` |
+| 8 | 121+ Days | `ageing['over120days']` |
+| 9 | Total Outstanding | `total_outstanding` (net of deposits + credit notes; can be negative) |
+
+**Total row** (both outputs): the word `Total` spans the first two columns (Customer + Average Days), then bucket grand totals in columns 3–8, and the grand `Total Outstanding` sum in column 9. All amounts use the same negative-bracket / red-font rule.
+
+**Excel-specific**: header strip (company name, address, title, report ID, printed by, print date/time) merges `A:I` (9 columns wide).
 
 ---
 
@@ -114,6 +136,8 @@ The Summary Report totals must match the Detail Report:
 - Both reports use the same aging bucket ranges
 - Both reports allow negative net outstanding (credit balances)
 - Both reports use the same company_code scoping via user association
+- Both reports apply per-row PKR conversion for multi-currency invoices (Summary parity added in v1.3, matching Detail v1.7)
+- Both reports use `service.ticket_issue_date` as the effective invoice date for Air services and `invoice.invoice_date` otherwise (Summary parity added in v1.3)
 
 ---
 
@@ -129,6 +153,38 @@ The Summary Report totals must match the Detail Report:
 ### Version 1.2 (April 2026)
 - **Currency conversion fix** - Invoice amounts now converted to PKR using invoice's own `exchange_rate` field first (matching customer account statement report logic), with fallback to `currencies` table. Previously only looked up from `currencies` table which returned no results.
 - **N+1 query elimination** - Replaced per-customer queries (3 queries × N customers) with batch queries using `Op.in`. Reduces DB round-trips from ~1500 to 5 for 500 customers.
+
+### Version 1.4 (2026-05-11)
+
+Brought the Excel export into structural parity with the PDF.
+
+- **Excel freeze pane fix** — Previously `ySplit: 7` froze only the title block (rows 1-7) so the column header row at row 8 would scroll out of view when paging through data. Now `ySplit: 8` with `topLeftCell: 'A9'` and `activeCell: 'A9'` so the column header row stays pinned along with the title block. The `topLeftCell` property is required — without it, Excel re-renders the frozen rows at the top of the scrollable pane too, producing a duplicate-header visual effect.
+
+- **Excel column set rewritten** — was 12 columns (Customer, Sales ID, Credit Limit, Total Invoices, Total Deposits, Total Outstanding, Current, 1-30, 31-60, 61-90, 91-120, 120+ Days). Now 9 columns matching the PDF: Customer, Average Days, Current, 1-30, 31-60, 61-90, 91-120, 121+ Days, Total Outstanding.
+- **Dropped from Excel** — Sales ID, Credit Limit, Total Invoices, Total Deposits (these were already commented out / hidden in the PDF).
+- **Added to Excel** — Average Days column (sourced from `total_aging`).
+- **Label fixed** — Excel now says "121+ Days" instead of "120+ Days", matching the PDF.
+- **Total row** — `Total` label now spans columns 1–2 (mirrors PDF's `colspan="2"`), bucket totals in 3–8, grand Total Outstanding sum in column 9. Previously Excel put "Total" into the Total Outstanding column and omitted the grand sum.
+- **Negative formatting** — Excel now uses accounting brackets `(amount)` with red font for negatives in both data rows and the total row, matching the PDF's `.negative` styling.
+- **Header strip merge** — adjusted from `A:J` to `A:I` (was wider than the data table; now matches).
+
+### Version 1.3 (2026-05-10)
+
+Brings the Summary controller into full parity with the Detail controller (v1.7) so that the Summary's per-customer `Total Outstanding` sum equals the Detail's `NET GRAND TOTAL`, and the bucket distribution matches column-by-column.
+
+- **Multi-currency invoice aggregation (parity with Detail v1.7)** — Replaced the old `totalAmount` accumulator (raw sum then multiply by first row's `exchange_rate`) with a per-row PKR conversion. For a `KHIN00000093`-style invoice with three SAR rows and one PKR row, the PKR row is no longer multiplied by the SAR rate. Each row is now converted to PKR using *its own* `currency` + `exchange_rate` at accumulation time, then summed.
+  - Helper added: `resolveRowPkrRate(row)` returns `{ rate }` per row using stored `exchange_rate` first, falling back to `cachedConvertToPKRAR`, then to rate `1`.
+  - Group accumulator now tracks `totalAmountPKR` and `totalSettledPKR` (both PKR-converted at accumulation).
+  - Settlements deduped by `settlement.id` and converted using the parent invoice row's rate (settlements have no currency/rate of their own).
+  - Voided settlements (`receipt_settlement.status === 'Void'`) still excluded.
+- **Air → ticket_issue_date for due date (parity with Detail)** — Air services now use `service.ticket_issue_date` as the effective invoice date for due-date calculation; non-Air services keep using `invoice.invoice_date`. This ensures Air invoices land in the same ageing bucket on both reports.
+  - Helper added: `resolveEffectiveInvoiceDate(row)`.
+  - Required adding `Service` (with `service_type`) include to the Summary's `invoice.findAll` query.
+- **Verified equivalences with Detail report**:
+  - Deposit credit: same `current_amount` + `cachedConvertToPKRAR` path.
+  - Credit note credit: same `amount - used_amount` formula.
+  - Negative net outstanding allowed (credit balance) — both reports.
+  - Customer inclusion criterion: same (has invoices, deposits, or credit notes).
 
 ---
 

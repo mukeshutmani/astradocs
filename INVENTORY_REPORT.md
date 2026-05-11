@@ -1,12 +1,41 @@
 # Inventory Report - Technical Documentation
 
-**Version**: 1.21
-**Date**: April 2026
+**Version**: 1.24
+**Date**: May 2026
 **Author**: System Analysis
 **Status**: Stable - Verified
 
 **Changelog**:
-1. **v1.21** — Three combined fixes: (a) Bumped `.compact-table` font to 12px in BOTH the screen rule (was 8px) AND the `@media print` rule (was 11px). The earlier 11px-only print fix didn't show up in the PDF because wkhtmltopdf wasn't reliably applying `@media print`, so the 8px screen rule was leaking through. Setting both rules to the same size guarantees consistent output regardless of media mode. Excel data + Grand Total fonts also bumped 10pt → 11pt. (b) Added `supp_no` to the width maps (`75px → 95px` after the 12px-font rebalance) so Supplier No isn't oversized. (c) Widened all explicit-width columns to fit 12px content cleanly (dates 65→75, ticket_no 70→80, invoice/supp/xo IDs 70-75 → 90-95, etc.) — no truncation expected at the new font size.
+1. **v1.24** — Multiple iterations rolled into one entry:
+   1. **Product Type filter** added (8th filter). Operates on `service_type.type` (string values like `Air`, `Hotel`, `Visa`, `Insurance`, `Train`, `Tour`, `Cruise`, `Car_Transfer`, `Rental_Car`, `Hajj`, `Umrah`, `Misc`). Standard 4-operator set (`isNotBlank` / `isBlank` / `isEqual` / `in`). Backend reuses the existing `service_type` include — both Product Code (`id`) and Product Type (`type`) clauses live in the same `serviceTypeWhere` and AND together. Frontend dropdown deduplicates types from the loaded `serviceTypes` list.
+   2. **Binding column widths** — Switched the Inventory Report's `compact-table` to `table-layout: fixed` AND added a `<colgroup>` block at the top of the table with one `<col style="width: …px">` per column. Earlier `<th>` width hints were just suggestions and wkhtmltopdf was stretching columns to fill blank space. The colgroup approach is universally honored — column widths are now exact.
+   3. **Larger fonts** — PDF: `th` (header) → 14px, `td` (data) → 13px (was 12px both). Excel: column header → 14 (was 12), data + Grand Total rows → 13 (was 11).
+   4. **Tightened column widths** to user-specified values. Final values:
+      - Ticket Date: 55px / 10
+      - Ticket Num: 60px / 10
+      - Air-Code: 35px / 6
+      - PNR: 50px / 8
+      - Status: 35px / 6
+      - Invoice Number: 60px / 10
+      - P-Type: 40px / 6
+      - P-Code: 35px / 6
+      - Passenger Name: 130px / 18
+      - Departure Date: 50px / 8
+      - Arrival Date: 50px / 8
+      - Itinerary: 40px / 6
+      - Supplier No: 55px / 10
+      - XO Number: 60px / 10
+      - Publish Fare: 75px / 11
+      - Tax Amount: 70px / 11
+      - Commission: 70px / 11
+      - WHT: 55px / 9
+      - Extra Charges: 70px / 11
+      - Total Cost: 80px / 12
+      - IATA: 40px / 8
+   5. **Grand Total label moved** from the Ticket Date column (first) to the XO Number column (right before the amount columns) — reads more naturally as a row anchor for the totals.
+   6. **Truncation note**: at the new 13px data font size with these tight widths, several columns (Status, Itinerary, IATA, Supplier No, Invoice/XO/Ticket Num) will show `…` ellipsis on longer values. This is intentional per user preference — the layout prioritizes overall density over full readability of every cell.
+2. **v1.23** — `Total Cost` now **includes** Extra Charges (`free_of_cost`). Reverses the v1.1 design decision that kept Extra Charges as a standalone column only. Now `costPerUnit = nettRate + regularTax + whtAmount + extraCharges`, matching the formula used by Airline Sales and Daily Sale reports. Behavior change: previously generated reports on S3 won't reflect this; only newly generated reports do.
+2. **v1.21** — Three combined fixes: (a) Bumped `.compact-table` font to 12px in BOTH the screen rule (was 8px) AND the `@media print` rule (was 11px). The earlier 11px-only print fix didn't show up in the PDF because wkhtmltopdf wasn't reliably applying `@media print`, so the 8px screen rule was leaking through. Setting both rules to the same size guarantees consistent output regardless of media mode. Excel data + Grand Total fonts also bumped 10pt → 11pt. (b) Added `supp_no` to the width maps (`75px → 95px` after the 12px-font rebalance) so Supplier No isn't oversized. (c) Widened all explicit-width columns to fit 12px content cleanly (dates 65→75, ticket_no 70→80, invoice/supp/xo IDs 70-75 → 90-95, etc.) — no truncation expected at the new font size.
 2. **v1.20** — Added `supp_no: 75px / 14` plus widened narrow columns slightly (dates 55→65px, PNR/Status 55→60px, P-Type/P-Code 35→40px, IATA 60→65px, Itinerary 50→55px) and bumped print font 7px → 9px. *(Note: the print-font bump silently failed to take effect — see v1.21 above for the actual fix.)*
 3. **v1.19** — Tightened more columns. `issue_date` 60px → 55px. Added `dep_date` (55px), `arr_date` (55px), `invoice_no` (70px), `xo_number` (70px) to the width maps. Excel widths mirrored. Now 13 of the 21 columns have explicit widths; the remaining 8 share the leftover A3 landscape width.
 2. **v1.18** — Two readability tweaks: (a) bumped the `.compact-table` print font from 7px → 9px and padding from 1px/2px → 2px/3px so the PDF is easier to read. (b) Extended `columnWidths` / `excelColumnWidths` with six more narrow columns (PNR, Status, P-Type, P-Code, Itinerary, IATA) so they don't waste horizontal space.
@@ -49,13 +78,14 @@ It answers the question: *"What tickets have been issued (inventory) and what do
 
 **Filters**:
 
-1. **Product Code** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service.service_type_id` via the `service_type` include).
-2. **Ticket Issue Date** — `=`, `<`, `<=`, `>`, `>=`, `<>`, `between` (applied to `service.ticket_issue_date`).
-3. **Airline** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service.airline_form`).
-4. **IATA No** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service.Order.branch.iata_number`).
-5. **Supplier No.** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service.supplier_id`).
-6. **Ticket Status** — `isNotBlank`, `isBlank`, `isEqual`, `in`. Operates on the **computed** status (`Ticketed` / `Refunded`), not on any DB column. Applied as a post-fetch JS filter after the SQL result is built (see "Filter Logic → Ticket Status" below).
-7. **Branch** — `isNotBlank`, `isBlank`, `isEqual` (applied to `Service.Order.branch_id`).
+1. **Product Code** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service_type.id` via the `service_type` include).
+2. **Product Type** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service_type.type` — string values like `Air`, `Hotel`, `Visa`, `Insurance`, `Train`, `Tour`, `Cruise`, `Car_Transfer`, `Rental_Car`, `Hajj`, `Umrah`, `Misc`).
+3. **Ticket Issue Date** — `=`, `<`, `<=`, `>`, `>=`, `<>`, `between` (applied to `service.ticket_issue_date`).
+4. **Airline** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service.airline_form`).
+5. **IATA No** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service.Order.branch.iata_number`).
+6. **Supplier No.** — `isNotBlank`, `isBlank`, `isEqual`, `in` (applied to `service.supplier_id`).
+7. **Ticket Status** — `isNotBlank`, `isBlank`, `isEqual`, `in`. Operates on the **computed** status (`Ticketed` / `Refunded`), not on any DB column. Applied as a post-fetch JS filter after the SQL result is built (see "Filter Logic → Ticket Status" below).
+8. **Branch** — `isNotBlank`, `isBlank`, `isEqual` (applied to `Service.Order.branch_id`).
 
 **Output**: PDF or Excel (user picks from the Generate dropdown).
 
@@ -138,14 +168,25 @@ Every filter is **bypassed** at the controller when the chosen operator needs a 
 
 This means a fresh page submission (no values touched) returns the full dataset, rather than returning zero rows or throwing.
 
-### Product Code
+### Product Code & Product Type
 
-Applied on the `service_type` include via `where` + `required`:
+Both filters share the same `service_type` include — the controller builds a single `serviceTypeWhere` object with clauses for `id` (Product Code) and `type` (Product Type) and lets Sequelize AND them together.
+
+**Product Code** (operates on `service_type.id`):
 
 1. `isNotBlank` → `service_type.id IS NOT NULL` with `required: true` (acts as INNER JOIN).
 2. `isBlank` → no-op (every service has a service_type; filter is skipped).
 3. `isEqual` → `service_type.id = :product_code` with `required: true`.
 4. `in` → `service_type.id IN (...ids)` with `required: true` (ids from comma-separated string).
+
+**Product Type** (operates on `service_type.type`, the string column):
+
+1. `isNotBlank` → `service_type.type IS NOT NULL` with `required: true`.
+2. `isBlank` → `service_type.type IS NULL` (LEFT JOIN — service_types with explicit null type are rare but supported).
+3. `isEqual` → `service_type.type = :product_type` with `required: true`. Frontend dropdown shows the deduplicated list of types (Air, Hotel, Visa, …) loaded from the existing `serviceTypes` API.
+4. `in` → `service_type.type IN (...types)` with `required: true` (comma-separated strings).
+
+When both filters are active, only services matching BOTH the id AND type conditions pass — useful for narrowing within a product category (e.g., "Air" type AND product_code 12).
 
 ### Ticket Issue Date
 
@@ -227,7 +268,7 @@ Rendered left-to-right in this order (21 columns total). Display labels are set 
 | 16 | Tax Amount | `tax_amount` | Σ `cost.cost_taxes[i].tax_amount` | Sum of regular cost taxes (excludes WHT). |
 | 17 | Commission | `commision` | `cost.published_rate × cost.commission / 100` | Commission amount (from agent's cost). The key has a typo (`commision`) preserved for compatibility; the override map forces the header to display "Commission". |
 | 18 | WHT | `wht` | `commissionAmount × cost.sst / 100` | Withholding tax — WHT percent (stored in `cost.sst`) applied to the commission amount. |
-| 19 | Extra Charges | `extra_charges` | `cost.free_of_cost` | Extra charges on the cost (the `free_of_cost` field is repurposed for extra charges). **Shown as its own column; intentionally NOT folded into the `cost` column.** |
+| 19 | Extra Charges | `extra_charges` | `cost.free_of_cost` | Extra charges on the cost (the `free_of_cost` field is repurposed for extra charges). Shown as its own column AND folded into Total Cost (as of v1.23). |
 | 20 | Total Cost | `cost` | See formula below | Unit cost after commission deduction, plus taxes and WHT. |
 | 21 | IATA | `iata_no` | `service.Order.branch.iata_number` | IATA number of the issuing branch (used for BSP settlement). |
 
@@ -289,10 +330,10 @@ For each row:
 6. `whtPercent = cost.sst` *(WHT percentage stored in the `sst` field)*
 7. `whtAmount = commissionAmount × whtPercent / 100`
 8. `extraCharges = cost.free_of_cost` *(exposed as its own `extra_charges` column)*
-9. `costPerUnit = nettRate + regularTax + whtAmount` *(Extra Charges intentionally **NOT** included here)*
+9. `costPerUnit = nettRate + regularTax + whtAmount + extraCharges` *(Extra Charges included as of v1.23)*
 10. `cost = costPerUnit × 1` *(quantity is always 1 at the passenger-row level)*
 
-**Plain-language**: Start with the published rate, strip out the commission the agent earns, add back the taxes that are passed through, and add withholding tax charged on the commission portion. Extra Charges is shown separately for transparency but is **not** included in the Cost column (by design — different from Airline Sales / Daily Sale reports, which do fold it into Cost).
+**Plain-language**: Start with the published rate, strip out the commission the agent earns, add back the taxes that are passed through, add withholding tax on the commission portion, and add Extra Charges. Now matches Airline Sales / Daily Sale reports.
 
 ---
 
@@ -341,11 +382,32 @@ The PDF/Excel header shows:
 2. Variables passed: `data1`, `data1Total`, `header`, **plus seven Inventory-Report-specific flags**:
    1. `pageSize: 'A3'` — switches `@page size` from the default `A4 landscape` to `A3 landscape` (more width for 21 columns). Note: actual page size is also explicitly forced via `createPdf(html, true, { pageSize: 'A3' })` because wkhtmltopdf ignores CSS `@page` when its own `pageSize` option is set.
    2. `alignAllLeft: true` — every header and data cell renders `text-align: left` by default.
-   3. `rightAlignKeys: ['publish_fare', 'tax_amount', 'commision', 'wht', 'extra_charges', 'cost']` — per-key override that right-aligns these 6 amount columns even though `alignAllLeft` is true. The template's `cellAlign` helper checks this list first.
+   3. `rightAlignKeys: ['publish_fare', 'tax_amount', 'commision', 'wht', 'extra_charges', 'cost', 'iata_no']` — per-key override that right-aligns the 6 amount columns plus IATA even though `alignAllLeft` is true. The template's `cellAlign` helper checks this list first.
    4. `prominentTitle: true` — adds a `.prominent` class to the `.page-subtitle` div, bumping the font size to 16px so the report title stands out.
-   5. `compactTable: true` — adds a `.compact-table` class to the `<table>` element, reducing font-size to 8px on screen / 7px in print and padding to 1px/2px so all 21 columns fit without right-side clipping (A3 alone wasn't enough).
+   5. `compactTable: true` — adds a `.compact-table` class to the `<table>` element. As of v1.24 this class also enables `table-layout: fixed`, sets `th` font-size to **14px** and `td` font-size to **13px**, and tightens padding to 2px/4px. Combined with the `<colgroup>` (see flag 7) this gives binding column widths so the table doesn't stretch into blank space.
    6. `columnHeaders` — per-key header override map for the 21 final display labels.
-   7. `columnWidths` — per-key width hints applied as inline `style="width: …"` on the matching `<th>` elements. Currently set for 13 columns: Ticket Date (55px), Ticket Num (70px), Air-Code (40px), PNR (55px), Status (55px), Invoice Number (70px), P-Type (35px), P-Code (35px), Departure Date (55px), Arrival Date (55px), Itinerary (50px), XO Number (70px), IATA (60px). The Excel writer mirrors this with a parallel `excelColumnWidths` map (in ExcelJS character units) applied after the auto-fit loop.
+   7. `columnWidths` — drives BOTH the inline `style="width: …"` on each `<th>` element AND the `<col style="width: …">` entries in the `<colgroup>` block at the top of the table. The colgroup is what makes widths binding under `table-layout: fixed`. Currently set for all 20 non-passenger columns; passenger_name has its own explicit 130px entry. Final values (PDF / Excel chars):
+      - Ticket Date 55 / 10
+      - Ticket Num 60 / 10
+      - Air-Code 35 / 6
+      - PNR 50 / 8
+      - Status 35 / 6
+      - Invoice Number 60 / 10
+      - P-Type 40 / 6
+      - P-Code 35 / 6
+      - Passenger Name 130 / 18
+      - Departure Date 50 / 8
+      - Arrival Date 50 / 8
+      - Itinerary 40 / 6
+      - Supplier No 55 / 10
+      - XO Number 60 / 10
+      - Publish Fare 75 / 11
+      - Tax Amount 70 / 11
+      - Commission 70 / 11
+      - WHT 55 / 9
+      - Extra Charges 70 / 11
+      - Total Cost 80 / 12
+      - IATA 40 / 8
 3. All seven flags are **additive** in `report1.ejs` — other reports that don't pass them keep their original behavior.
 4. The template's `data1Total` block renders the Grand Total as a bold `.total-row` at the end of the table.
 5. Generated via `createPdf(html, true)` (wkhtmltopdf pipeline).

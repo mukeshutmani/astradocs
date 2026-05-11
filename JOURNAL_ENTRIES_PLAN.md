@@ -111,7 +111,9 @@ Located in `/psback/services/journal.js`:
 4. **DISC/RBTE calculate on invoice.price only** - Not price + markup
 5. **Period Assignment**: Entries are assigned to periods based on their transaction_date
 6. **Batch Narrative**: Each batch includes the period identifier in its narrative
-7. **Void entries use void date, not original document date** - All void posting-rules functions set `transaction_date = <doc>.updated_at` so reversal entries land in the period the void actually happened. Each respective void controller explicitly writes `updated_at = NOW()` when voiding, making this reliable as long as the voided document is not subsequently edited (which is the normal case). Applied to **all 11 void paths**:
+7. **Void entries use void date, not original document date** - All void posting-rules functions set `transaction_date = <doc>.updated_at` so reversal entries land in the period the void actually happened. Each respective void controller explicitly writes `updated_at = NOW()` when voiding, making this reliable as long as the voided document is not subsequently edited (which is the normal case).
+
+   **Date filter on the `from`/`to` range** uses `created_at OR updated_at` (Sequelize `Op.or`) across all 7 void posting-rules functions that accept the range (`voidCreditNotePostingRules`, `voidDebitNotePostingRules`, `voidDepositPostingRules`, `voidSupplierDepositPostingRules`, `voidSettlementPostingRules`, `voidCreditNotePaymentPostingRules`, `voidInternalTransferPostingRules`). Reason: a document voided today but created weeks ago must still be picked up when the user runs "Generate System JE" with today's date — filtering on `created_at` alone misses these. Duplicate-protection still holds because each function checks `journal_entry.analysis_code1 LIKE '<doc> (Void)'` before posting. Applied to **all 11 void paths**:
    - `voidInvoicePostingRules` → `invoice.updated_at`
    - `voidCostingPostingRules` (XO) → `costing.updated_at`
    - `voidCreditNotePostingRules` → `creditNote.updated_at`
@@ -125,16 +127,55 @@ Located in `/psback/services/journal.js`:
    - `voidInternalTransferPostingRules` (ACTO + ACFR) → `payment.updated_at`
 
 8. **Manual JE voiding creates a NEW reversal batch with the next sequential number** - When a Manual JE batch is voided via `voidBatch` (`journal_entry.controller.js`), the controller:
-   - Accepts an optional `void_date` (YYYY-MM-DD) from the request body. Validates it's not before the original batch's `dated` value. Anchors the parsed date at noon (`<date>T12:00:00`) to avoid timezone-shift edge cases when computing the period. Falls back to `new Date()` if not provided.
+   - Accepts an optional `void_date` (YYYY-MM-DD) from the request body. Validates it's not before the original batch's `dated` value AND not in the future. Anchors the parsed date at noon (`<date>T12:00:00`) to avoid timezone-shift edge cases when computing the period. Falls back to `new Date()` if not provided.
    - Marks the original batch `status = 'Void'` (entries untouched — audit trail preserved).
    - Generates the next sequential `JV` batch number across the company (same logic as `createJournalEntryBatch`).
-   - Creates a NEW Manual JE batch with that number: `status = 'Posted'`, `dated = <voidDate>`, `journal_entry_period = MMYYYY of voidDate`, narrative `"Reversal of voided batch <original_batch_no>"`.
+   - Creates a NEW Manual JE batch with that number: **`status = 'Void'`** (both original and reversal share the same status — they represent one cancelled JE event together), `dated = <voidDate>`, `journal_entry_period = MMYYYY of voidDate`, narrative `"Reversal of voided batch <original_batch_no>"`.
    - Inserts reversal rows into the NEW batch — same accounts, analysis codes, and gl_entity_id; **debit/credit swapped**; `transaction_date = <voidDate>`; description prefixed `VOID REVERSAL - <original_description>`.
    - All steps run inside a single DB transaction so partial failures roll back cleanly.
    - GL trial balance shows both batches netting to zero.
    - API response includes both `batch_no` (original) and `reversal_batch_no` (new) so the UI can surface the new number to the user via toast.
 
-   **Frontend (`JournalEntryBatches.jsx`):** clicking the red `Void` button opens an AlertDialog with a `DateInput` field; `minDate` is set to the original batch's `dated` value so users cannot back-date the reversal before the JE existed. Selected date is sent as `void_date` in the API request body.
+   **Filtering convention**: with both batches now `Void`, the status filter alone (`status != 'Void'`) is sufficient to keep voided JEs out of reports. The `description LIKE 'VOID REVERSAL -%'` filter is still applied across the codebase as a defensive belt-and-braces measure (and as a human-readable audit marker), but it is functionally redundant after this change.
+
+   **Frontend (`JournalEntryBatches.jsx`):** clicking the red `Void` button opens an AlertDialog with a `DateInput` field. The picker enforces an allowed range of `[original batch's dated, today]` — `minDate` is the original JE's `dated` value (no back-dating before the JE existed); `maxDate="today"` (no future-dating). Selected date is sent as `void_date` in the API request body. The dialog button shows a spinning `Loader2` icon while the request is in flight; `e.preventDefault()` on the AlertDialogAction stops Radix from auto-closing the dialog so the spinner remains visible until the call completes.
+
+11. **Editing a Manual JE batch can renumber it when the Document Type (branch) changes** (`updateJournalEntryBatch`):
+    - When `branch_id` in the update payload differs from the current batch's branch, the controller treats this as a "move to another branch" operation:
+      - Blocked if the batch is `Void` (voided records should never mutate).
+      - Blocked if any reversal batch references this batch via narrative `"Reversal of voided batch <old_batch_no>"` — the reversal's narrative would otherwise become stale.
+      - Otherwise generates the next sequential `JV` batch number for the new branch's company (same logic as `createJournalEntryBatch` / `voidBatch`) and updates both `batch_no` and `branch_id` atomically.
+    - Response now returns `{ id, batch_no, renumbered, previous_batch_no }` so the UI can react to a renumber.
+    - **Frontend (`AddJournalEntryBatchImproved.jsx`)**: on save, if the response indicates a renumber, the page navigates (`replace: true`) to the new URL `/gl/JournalEntries/batch/<new_batch_no>` and shows a toast `"Batch renumbered: <previous> → <new>"`. The journal_entries themselves do not move (they reference batch by FK `journal_batch_id`, not by `batch_no`), so audit trail is preserved.
+
+12. **Manual JE settlement updates invoice / cost status (Level 2 integration)**
+    Shared service `psback/services/manualJeAdjustment.js` exposes:
+    - `sumManualJeAdjustment(ref, t)` — sums live (`status != 'Void'` AND description `notLike 'VOID REVERSAL -%'`) Manual JE row debit+credit for a doc reference.
+    - `sumManualJeAdjustmentByCostId(costId, t)` — same but resolves doc number(s) for a cost id via `documents`.
+    - `recalculateInvoiceStatusByNumber(invoiceNumber, t)` — applies receipt-settlements + Manual JE adjustments and updates `invoice.status` (`Settled` / `Partially Settled` / `Printed`); never overrides `Void`/`Raised`; locks rows.
+    - `recalculateCostStatusByDocNumber(documentNumber, t)` — same idea for costs (`Paid` / `Partially Paid` / `Printed`); reuses `payment.controller.js`'s cost-total formula.
+    - `recalculateStatusesForRefs(refs, t)` — fan-out helper; ignores non-IN/XO refs silently.
+
+    Wired into:
+    - `journal_entry.controller.js` → `createJournalEntries`, `updateJournalEntries`, `voidBatch`, `deleteBatch`. `updateJournalEntries` recalcs both pre-update and post-update refs so unlinking/deleting reverts status.
+    - `invoice.controller.js` → receipt-settlement create AND void paths now add `sumManualJeAdjustment(invoice.invoice_number, t)` to the paid total.
+    - `payment.controller.js` → supplier-payment create AND void paths now add `sumManualJeAdjustmentByCostId(cost.id, t)` to the paid total.
+
+    Result: any ordering of receipt/payment-settlement and Manual JE actions produces consistent `invoice.status` / `cost.status`. Reports, listings, and the Manual JE document picker (which filters by status) stay accurate without further changes. No new DB columns — the "balance/remaining" is always derived live from `total - settlements - manualJeAdjustments` per standard accounting practice.
+
+13. **Customer/Supplier-driven Document picker in Manual JE editor** (`JournalEntriesImproved.jsx`)
+    - Backend: `GET /journalEntry/related-documents?customer_id=X` returns invoices via `documents → service → order.customer_id`; `?supplier_id=Y` returns costing/XO documents via `documents → service.supplier_id`. Both queries:
+      - Apply **company isolation**: `order.branch_id` must belong to the requesting user's company (`req.user.company_code`).
+      - Apply **status filter**: skips closed/cancelled docs (Invoices: exclude `Void`, `Raised`, `Settled`; Costs: exclude `Void`, `Raised`, `Paid`).
+      - Return deduped `{ document_number, type, amount }`.
+    - Frontend: when a row's Customer/Supplier is selected, the Document column switches from a free-form text input to a `SearchableSelect` whose options are that entity's invoices (customer) or XOs (supplier). Options are cached per `${entityType}-${entityId}` key. The dropdown's loading vs empty state is distinguished by checking `Object.prototype.hasOwnProperty.call(documentOptionsByEntity, key)` so an entity with zero docs shows "No invoices/XOs found" instead of staying on "Loading...".
+    - A new "Amount" column appears right of Document, looking up the linked doc's amount from the cached options for instant display.
+
+14. **Manual JE settlement reflects on the printed invoice / cost document footer**
+    - `document.controller.js` (invoice and cost render paths) sums `sumManualJeAdjustment(...)` for the document's references.
+    - `invoiceDocument.ejs` adds a "Received by JE" line between Received and Balance (only when `manualJEAdjustmentAmount > 0`); Balance = Grand Total − Received − Received by JE.
+    - `costDocument.ejs` adds "Paid by JE" + "Balance" rows under Grand Total.
+    - Multi-currency: PKR amounts converted to invoice/cost currency using `exchangeRateInfo.rate`.
 
 **Customer/Supplier-driven Document picker in Manual JE editor** (`JournalEntriesImproved.jsx`)
 - Backend: `GET /journalEntry/related-documents?customer_id=X` returns invoices via `documents → service → order.customer_id`; `?supplier_id=Y` returns costing/XO documents via `documents → service.supplier_id`. Both queries:
@@ -156,12 +197,21 @@ Located in `/psback/services/journal.js`:
     - A `reversalByOriginal` map is built from the batch list — for every batch whose narrative starts with `Reversal of voided batch <original>`, it maps `<original> → <reversal_batch_no>` so the UI can surface the link in both directions.
     - **Voided original (Manual JE, `status === 'Void'`, narrative does NOT start with `Reversal of voided batch `)**:
       - Actions cell: empty (no pill, no button — the Voided pill lives on the reversal batch instead).
+      - Status indicator: visual override displays it in the **Posted** color so it stays distinguishable from the reversal batch (DB status is `Void`, but on the listing the original visually retains its identity as "the original posted record").
       - Batch No cell: blue link with a red `Ban` icon and a red hover tooltip: `This JE is already voided — Reversed in batch: <reversal_batch_no>` (or `Reversal batch not found in current view` if the reversal isn't in the loaded list).
     - **Reversal/void JE (narrative starts with `Reversal of voided batch <original>`)**:
       - Actions cell: red `Voided` pill (this is the JE that represents the void operation).
+      - Status indicator: shows the **Void** color naturally — DB status IS `Void`, no override needed.
       - Batch No cell: blue link with an amber `AlertCircle` icon and an amber hover tooltip: `Reversal batch — This JE is the reversal of voided batch: <original_batch_no>`.
     - **Unbalanced batches** (any type): red link with red `AlertCircle` icon and red tooltip showing debit/credit/difference and offending docs.
     - Other Manual JE batches: standard `Void` button + simple blue Batch No link.
+
+    **Status color palette** (`statusColorCoding()` in `JournalEntryBatches.jsx`):
+    - `Open` → purple
+    - `Drafted` → green
+    - `Posted` → blue
+    - `Void` → red (changed from black)
+    All status overrides go through this function so future palette tweaks stay in one place.
 
 ```javascript
 // Key calculations
@@ -312,6 +362,13 @@ Total Credits: 307,810 ✓ Balanced
 - **Entries Not Assigned**: Check transaction dates fall within period date ranges
 - **Missing Entries**: Verify documents have valid transaction_date values
 - **Wrong Period**: Confirm period start/end dates are correctly configured
+
+### 6. Credit-Note JE unbalanced by exactly the supplementary fee
+- **Symptom**: A System-JE batch for a customer Credit Note (CN) is unbalanced; the difference equals `refund.calculator_overrides.customer.supplementaryFee`.
+- **Root cause**: `RFAREC` posts the full `refund.customer_refund_amount` (which already includes the supplementary fee), but the supplementary-fee component had no offsetting JE row because no entry-type code existed for it.
+- **Fix (applied)**: Added entry type **`RFSUP`** (`Refund - Supplementary Fee`). The CN posting paths in `psback/services/journal.js` now post `calcOverrides.customer.supplementaryFee` via RFSUP. Updated in all 5 paths: `voidCreditNotePostingRules`, `regenerateCreditNoteEntries`, `creditNotePostingRules`, `refundPostingRules`, `regenerateRefundEntries`.
+- **Required setup per branch**: Add a Posting Rule mapping `RFSUP` → an income/admin-fee Chart of Account (e.g. `410135 - Supplementary Fee`) on the **debit** side, prefix `<branch_doc_prefix>CN`. Without this rule the imbalance persists for any CN whose refund has a supplementary fee.
+- **Existing unbalanced batches**: Need to be regenerated (null `je_generated` on the source CN, delete the batch, re-run "Generate System JE") after the posting rule is in place.
 
 ## Support Queries
 

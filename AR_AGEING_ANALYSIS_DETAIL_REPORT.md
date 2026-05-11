@@ -1,9 +1,9 @@
 # AR Ageing Analysis Detail Report - Technical Documentation
 
-**Version**: 1.7
-**Date**: 2026-04-28
+**Version**: 1.8
+**Date**: 2026-05-11
 **Author**: System Analysis
-**Status**: Stable — All Critical Issues Resolved (multi-currency aggregation fixed in v1.7)
+**Status**: Stable — Excel freeze pane fixed in v1.8; multi-currency aggregation fixed in v1.7
 
 ---
 
@@ -329,7 +329,8 @@ Customer/Doc No. | TC Code | Sales ID | Customer Ref. | Doc Date | Due Date | Da
 **Layout**:
 - **Rows 1-6**: Header section (company name size 24, address, report title, metadata). Merged across A..N.
 - **Row 7**: Blank spacer.
-- **Row 8**: Frozen column header row (gray `#D9D9D9`, bold, bordered). Amount columns (G..N) right-aligned.
+- **Row 8**: Column header row (gray `#D9D9D9`, bold, bordered). Amount columns (G..N) right-aligned.
+- **Frozen pane**: `ySplit: 8, topLeftCell: 'A9', activeCell: 'A9'` — rows 1-8 (title block + column header row) stay pinned while data rows scroll. Previously froze only rows 1-7, causing the column header row to scroll out of view when paging through data. `topLeftCell` must be set; otherwise Excel re-renders the frozen rows at the top of the scrollable pane.
 
 **Per-customer section** (repeats for each customer):
 1. **Customer header row** — `Customer: {number} - {name}` merged A..N, bold, light gray `#F0F0F0`.
@@ -442,6 +443,10 @@ Minor confusion for users comparing PDF and Excel outputs.
 14. **PDF Template Foreign Currency Label** - Replaced hardcoded `invoice.currency === '145'` (USD-only) with `invoice.original_currency` check. Now labels all foreign currencies (USD, SAR, AED, CNY, etc.).
 15. **N+1 Query Elimination** - Replaced per-customer queries (3 queries × N customers) with 3 batch queries using `Op.in` for all customer IDs. Results grouped by `customer_id` in JavaScript. Reduces database round-trips from ~1500 to 3 for 500 customers.
 16. **API Timeout Increase** - Backend report route timeout increased from 30s to 5 minutes. Frontend axios timeout for report APIs increased to 5 minutes. Prevents `ERR_EMPTY_RESPONSE` on large datasets.
+
+### Completed Fixes (Version 1.8) — 2026-05-11
+
+18. **Excel freeze pane fix** — Previously `ySplit: 7` froze only the title block (rows 1-7), so when scrolling down through invoices the column header row at row 8 would scroll out of view. Changed to `ySplit: 8` with `topLeftCell: 'A9'` and `activeCell: 'A9'` so the column header row stays pinned with the title block. The `topLeftCell` property is required — without it, Excel re-renders the frozen rows at the top of the scrollable pane too, producing a duplicate-header visual effect.
 
 ### Completed Fixes (Version 1.7) — 2026-04-28
 
