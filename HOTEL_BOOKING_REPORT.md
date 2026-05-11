@@ -15,6 +15,12 @@ The Hotel Booking Report provides a detailed listing of all hotel bookings, grou
 | orderDateFilter | string | Date filter operator: `=`, `<`, `<=`, `>`, `>=`, `<>`, `between` |
 | orderStartDate | date | Start date for order date filter (order.created_at) |
 | orderEndDate | date | End date (required when filter is `between`) |
+| checkInDateFilter | string | Date filter operator for check-in date: `=`, `<`, `<=`, `>`, `>=`, `<>`, `between` |
+| checkInStartDate | date | Start date for check-in date filter (service_hotel.check_in) |
+| checkInEndDate | date | End date for check-in date filter (required when filter is `between`) |
+| checkOutDateFilter | string | Date filter operator for check-out date: `=`, `<`, `<=`, `>`, `>=`, `<>`, `between` |
+| checkOutStartDate | date | Start date for check-out date filter (service_hotel.check_out) |
+| checkOutEndDate | date | End date for check-out date filter (required when filter is `between`) |
 | hotelNameFilter | string | `isEqual` to filter by specific hotel name |
 | hotel_name | string | Hotel name value when hotelNameFilter is `isEqual` |
 | customerFilter | string | `isEqual`, `isNotBlank`, or `isBlank` |

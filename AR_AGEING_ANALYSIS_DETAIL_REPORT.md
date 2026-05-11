@@ -270,12 +270,14 @@ Currency conversion errors are caught and logged - the unconverted amount is use
 | As Of Date | Date | DateInput | Single date value | Today |
 | Invoice Date | Select | DateInput | Is Not Blank, Is Blank, =, <, <=, >, >=, <>, Between | Is Not Blank |
 | Branch | Select | Combobox (client-side, up to 1000) | Is Not Blank, Is Blank, Is Equal, Between | Is Not Blank |
+| Sales ID | Select | Combobox (client-side, full list) | Is Not Blank, Is Blank, Is Equal, Between | Is Not Blank |
 
 ### Filter Input Details
 
 - **Customer Number**: When `isEqual` → single LiveComboBox. When `between` → two LiveComboBoxes (Start/End).
 - **Invoice Date**: When single operator (=, <, etc.) → one DateInput. When `between` → two DateInputs (Start/End).
 - **Branch**: When `isEqual` → single Combobox. When `between` → two Comboboxes (Start/End). Display format: `{document_prefix}/{name}`.
+- **Sales ID**: When `isEqual` → single Combobox. When `between` → two Comboboxes (Start/End). Filters on `customer.sale_id` (FK to `sales_id.id`). Display format: `{sales_person_identity} - {sales_person_name}`.
 
 ### Output Options
 
@@ -298,7 +300,7 @@ Currency conversion errors are caught and logged - the unconverted amount is use
 │ - Report Title & Filters Applied                        │
 ├─────────────────────────────────────────────────────────┤
 │ Column Headers                                          │
-│ Customer/Doc No | TC Code | Sales ID | Customer Ref |  │
+│ Customer/Doc No | TC Code | Sales ID | Pax Name |      │
 │ Doc Date | Due Date | Days Overdue | Current |         │
 │ 1-30 Days | 31-60 Days | 61-90 Days | 91-120 Days |    │
 │ 121+ Days | Total Outstanding                           │
@@ -324,7 +326,7 @@ Currency conversion errors are caught and logged - the unconverted amount is use
 The Excel export now mirrors the PDF **exactly** — same 14 columns, same per-customer structure, same color scheme, same grand-total block.
 
 **Columns (14 total, A..N)** — identical to the PDF:
-Customer/Doc No. | TC Code | Sales ID | Customer Ref. | Doc Date | Due Date | Days Overdue | Current (Within Cr. Period) | 1-30 Days | 31-60 Days | 61-90 Days | 91-120 Days | 121+ Days | Total Outstanding
+Customer/Doc No. | TC Code | Sales ID | Pax Name | Doc Date | Due Date | Days Overdue | Current (Within Cr. Period) | 1-30 Days | 31-60 Days | 61-90 Days | 91-120 Days | 121+ Days | Total Outstanding
 
 **Layout**:
 - **Rows 1-6**: Header section (company name size 24, address, report title, metadata). Merged across A..N.
@@ -338,8 +340,8 @@ Customer/Doc No. | TC Code | Sales ID | Customer Ref. | Doc Date | Due Date | Da
 3. **Customer Total row** — label merged A..F (right-aligned bold), avg days in G, bucket totals H..M, total in N. Light gray `#F0F0F0` fill.
 4. **Deposits section** (only if `customer.deposits.length > 0`):
    - Section header: `Deposits (Credit Balance)` merged A..N, yellow `#FFF3CD`, bold.
-   - Deposit rows: pink `#FFE6E6` fill, amounts shown in parens, red font `#FF0000`. `DEPOSIT` label in col 4.
-5. **Credit Notes section** (only if `customer.credit_notes.length > 0`): same styling as Deposits; `CREDIT NOTE` label in col 4.
+   - Deposit rows: pink `#FFE6E6` fill, amounts shown in parens, red font `#FF0000`. Pax Name column (col 4) is left blank.
+5. **Credit Notes section** (only if `customer.credit_notes.length > 0`): same styling as Deposits; Pax Name column (col 4) left blank.
 6. **Per-customer Net Outstanding row** (only if deposits or credit notes exist): label merged A..M (right-aligned), net value in col N, green `#D4EDDA` fill.
 7. **Blank spacer row** between customers.
 
@@ -550,6 +552,10 @@ Request Body:
   "branch_id": number,
   "branch_idStart": number,
   "branch_idEnd": number,
+  "salesIdFilter": "isNotBlank|isBlank|isEqual|between",
+  "sale_id": number (if isEqual),
+  "sale_idStart": number (if between),
+  "sale_idEnd": number (if between),
   "type": "pdf|excel"
 }
 
