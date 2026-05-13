@@ -332,6 +332,19 @@ The entire operation runs inside a Sequelize transaction with row-level locking.
 
 ---
 
+## Manual JE Integration (Listing)
+
+The settlement-page invoice listing (`getOrdersByCustomerId` in `psback/controllers/customer.controller.js`) reflects Manual JE settlements as well as receipt-settlement records. This keeps the listing in sync with `invoice.status` (which is already updated by `recalculateInvoiceStatusByNumber` when a Manual JE is created/edited/voided — see `docs/JOURNAL_ENTRIES_PLAN.md` item 12).
+
+1. After invoices are grouped by `invoice_number`/`document_number`, the controller calls `sumManualJeAdjustment(invoice_number)` once per unique invoice number (from `services/manualJeAdjustment.js`).
+2. The returned PKR adjustment is divided by the group's `exchangeRate` and added to `previousAmount` (group's paid-so-far, in source currency).
+3. Outstanding (`total_price - previousAmount`) then subtracts the JE; status flips to `Partially Settled` when JE > 0 and to `Settled` (filtered out of the listing) when JE fully clears the invoice.
+4. Manual JE rows that belong to a `Void` batch or are themselves `VOID REVERSAL -` rows are excluded by `sumManualJeAdjustment`'s filter, so a voided JE nets the invoice back to its prior state automatically.
+
+This complements the create/void paths in `invoice.controller.js`, which already add `sumManualJeAdjustment` to the paid total when computing settlement balance.
+
+---
+
 ## Settlement Types
 
 | Type | Condition | Submit Label |

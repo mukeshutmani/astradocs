@@ -70,8 +70,10 @@ whtAmount = commissionAmount × (sst% / 100)
 costPerUnit = netRateWithExtra + taxAmount + whtAmount
 totalCostLocal = costPerUnit × quantity
 totalCostPKR = totalCostLocal × exchange_rate
-outstandingAmount = totalCostPKR - sum(previous non-voided payments)
+outstandingAmount = totalCostPKR - sum(previous non-voided payments) - manual_je_adjustment
 ```
+
+**Manual JE adjustment** — `service.controller.js → getPaymentCostsBySupplierId` calls `sumManualJeAdjustment(document_number)` (from `services/manualJeAdjustment.js`) once per unique XO `document_number` in the response, and attaches the full PKR amount to the **first** cost of each document (rest get `0`). The frontend's `calculateProperCostAmount` subtracts it as a previous payment. Because the doc-grouping in the UI sums per-line outstandings, applying the JE only to one line per document avoids double-subtraction. The underlying `cost.status` is already set to `Partially Paid`/`Paid` by `recalculateCostStatusByDocNumber` when the JE is created/edited/voided (see `docs/JOURNAL_ENTRIES_PLAN.md` item 12); this wiring just makes Outstanding match.
 
 ### 4. Supplier Deposits (Advance Payments)
 
