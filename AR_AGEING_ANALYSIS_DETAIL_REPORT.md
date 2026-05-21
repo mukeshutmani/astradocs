@@ -1,9 +1,9 @@
 # AR Ageing Analysis Detail Report - Technical Documentation
 
-**Version**: 1.8
-**Date**: 2026-05-11
+**Version**: 1.9
+**Date**: 2026-05-15
 **Author**: System Analysis
-**Status**: Stable — Excel freeze pane fixed in v1.8; multi-currency aggregation fixed in v1.7
+**Status**: Stable — Manual JE settlement now subtracted from outstanding in v1.9; Excel freeze pane fixed in v1.8; multi-currency aggregation fixed in v1.7
 
 ---
 
@@ -445,6 +445,27 @@ Minor confusion for users comparing PDF and Excel outputs.
 14. **PDF Template Foreign Currency Label** - Replaced hardcoded `invoice.currency === '145'` (USD-only) with `invoice.original_currency` check. Now labels all foreign currencies (USD, SAR, AED, CNY, etc.).
 15. **N+1 Query Elimination** - Replaced per-customer queries (3 queries × N customers) with 3 batch queries using `Op.in` for all customer IDs. Results grouped by `customer_id` in JavaScript. Reduces database round-trips from ~1500 to 3 for 500 customers.
 16. **API Timeout Increase** - Backend report route timeout increased from 30s to 5 minutes. Frontend axios timeout for report APIs increased to 5 minutes. Prevents `ERR_EMPTY_RESPONSE` on large datasets.
+
+### Completed Fixes (Version 1.9) — 2026-05-15
+
+19. **Manual JE settlement included in outstanding** — Previously the report only subtracted `receipt_settlement_invoice` amounts. If an invoice was settled (fully or partially) via a Manual JE batch referencing the invoice number in `analysis_code1`, that adjustment was ignored — the outstanding column showed the pre-JE figure.
+
+    **Fix** (`psback/controllers/report.controller.js` inside `getARAgeingAnalysisDetailReport`):
+    1. After `allInvoices` is fetched, an inline query reads `journal_entries` (joined to `journal_batches`) filtered to live Manual JE rows for those invoice numbers: `batch_type = 'Manual JE'`, `journal_batch.status != 'Void'`, and `description NOT LIKE 'VOID REVERSAL -%'`.
+    2. Results are grouped into `Map<invoice_number, manualJePKR>` (debit + credit per row, summed across rows).
+    3. In the per-invoice group loop, `amountSettledPKR = group.totalSettledPKR + manualJePKR`; outstanding then computed against that combined settled total.
+    4. For single-currency invoices the `originalOutstanding` (foreign-currency display) also deducts `manualJePKR / firstRate` so the displayed original-currency value stays consistent.
+
+    **Void behavior (automatic)**:
+    - When a Manual JE batch is voided, its `status` flips to `Void` → the whole batch's rows are excluded.
+    - The reversal batch posted by `voidBatch` has every row's description prefixed `VOID REVERSAL -` → those rows are also excluded.
+    - Net effect: a voided JE contributes zero to outstanding, so the invoice's outstanding pops back up to its pre-JE value automatically on the next report run.
+
+    **Performance**: one batched query for all invoice numbers in the current report; no N+1 per customer. The query is included in the same transaction as the rest of the report fetches.
+
+    **Scope notes**:
+    - Helper logic was written inline in the controller rather than in `manualJeAdjustment.js` to keep the change contained to the report.
+    - Mirrors the where-clause shape used by `manualJeAdjustment.js`'s `liveManualJeWhereClause`, so future changes there should be cross-applied here.
 
 ### Completed Fixes (Version 1.8) — 2026-05-11
 

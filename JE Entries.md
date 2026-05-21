@@ -362,6 +362,12 @@ Credit: Bank/Cash Account                 Amount
 
 ---
 
+## Voiding an Empty JE
+
+An empty JE has no entries to reverse, so voiding it is meaningless. The batches list (`journalEntryBatches`) includes an `entry_count` per batch; when a Manual JE has `entry_count = 0`, clicking **Void** on the Journal Entries list shows a validation popup ("Cannot void an empty Journal Entry — This JE has no entries; there is nothing to void.") instead of opening the void dialog.
+
+---
+
 ## API Endpoints
 
 ### Journal Entry Batches & Entries

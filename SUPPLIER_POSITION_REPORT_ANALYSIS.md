@@ -63,7 +63,8 @@ Timeout: 5 minutes (300000ms)
 | Supplier No. | supplier_no | Supplier number |
 | Supplier Name | supplier_name | Supplier name |
 | Opening Balance B/F | opening_balance | Balance before report period |
-| Add Sale Invoices | cost_invoice | Period cost total |
+| Add Sale Invoices | cost_invoice | Period cost total (excludes opening XOs) |
+| Add Opening XO | opening_xo | Period imported opening XO total |
 | Less Refund Invoices | refunds | Period refunds (debit notes) |
 | Less Payments | payments | Period payments to supplier |
 | Less Advance Payments | advance_payments | Period supplier deposits |
@@ -149,6 +150,7 @@ Only calculated when `startDate` is provided. If no date filter, opening balance
 ```javascript
 net_balance = opening_balance
             + cost_invoice        // ADD costs incurred
+            + opening_xo          // ADD imported opening XOs
             - totalRefunds        // LESS refunds
             - paymentAmount       // LESS payments
             - totalAdvancePayments // LESS advance payments
@@ -330,4 +332,31 @@ The same shared-settlement double-counting also inflated the **current period** 
 
 ---
 
-**Last Updated**: 2026-04-28 — Section 10.1 (duplicate debit notes per refund), Section 10.2 (historical payments missing date filter + shared-settlement dedup)
+### 10.3 Add Opening XO Column (2026-05-19)
+
+**Goal**: Show imported **opening XOs** as their own **"Add Opening XO"** column, so the Supplier Position Report lines up column-by-column with the Supplier Account Statement.
+
+**What it was before**:
+1. The supplier query has **no costing-document filter**, so opening XO costs (`is_opening = 1`, no `documents` row) already flowed into the report.
+2. In-period opening XOs were silently bundled inside **"Add Sale Invoices"**.
+3. Pre-period opening XOs were already counted inside **"Opening Balance B/F"** via the historical loop.
+4. So the Net Balance was already correct — but "Add Sale Invoices" was inflated and disagreed with the Account Statement's figure.
+
+**Solution Implemented**:
+1. Reuses `getOpeningCostsForSuppliers(companyCode, supplierIds)` from `psback/services/openingXo.service.js`; opening XOs fetched once and grouped by supplier id.
+2. Opening XO costs are **excluded from "Add Sale Invoices"** — `is_opening` costs skipped in the current-period cost loop.
+3. Opening XO costs are **excluded from the historical opening-balance loop** — `is_opening` costs skipped (otherwise pre-period XOs would count twice).
+4. A per-supplier opening XO total is built with the report date filter (`dayKey`): pre-period XOs fold into Opening Balance B/F, in-period XOs go to the new column. PKR = `total_costing × exchange_rate`.
+5. New `opening_xo` ("Add Opening XO") column added to the supplier row, right after "Add Sale Invoices"; included in the `net_balance` formula.
+6. Excel: `_xo` added to the amount-column regex so the column is right-aligned and number-formatted. PDF (`report2.ejs`) renders the column automatically (dynamic template — no template edit).
+
+**Result**:
+- **Net Balance is unchanged** — opening XOs simply move into their own column instead of hiding inside "Add Sale Invoices" / "Opening Balance B/F".
+- "Add Sale Invoices" now matches the Supplier Account Statement.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierPositionReport`) — opening-XO fetch + grouping, `is_opening` skip in current cost loop and historical loop, per-supplier opening XO total, `opening_xo` column, `net_balance` formula, Excel amount-column regex.
+
+---
+
+**Last Updated**: 2026-05-19 — Section 10.3 (Add Opening XO column, mirroring the Supplier Account Statement)

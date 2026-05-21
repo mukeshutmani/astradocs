@@ -956,6 +956,39 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 **Note**: The matching fix was applied to the Supplier Position Report at the same time (see `SUPPLIER_POSITION_REPORT_ANALYSIS.md` section 10.2), which also had a missing date filter on its historical payment loop.
 
+### 16.7 Opening XO Section (2026-05-19)
+
+**Goal**: Show imported **opening XOs** (supplier cost documents brought in via the Opening XO Import feature) inside the Supplier Account Statement so the supplier's balance reflects them.
+
+**Why it was needed**:
+1. Opening XOs are rows in `costs` with `is_opening = 1`; they have **no `documents` row** and **no order**.
+2. The report's main cost query joins a costing `document` (INNER JOIN, `document_type: "costing"`), so every opening XO was silently skipped.
+3. Opening XOs therefore never appeared and never affected the supplier Net Balance.
+
+**Solution Implemented**:
+1. New helper `getOpeningCostsForSuppliers(companyCode, supplierIds)` in `psback/services/openingXo.service.js` — returns opening XO costs (batch type `XO`) for the report's suppliers, matched by `service.supplier_id`.
+2. `getSupplierAccountStatementReport` fetches the opening XOs once (after `supplierIds`) and groups them by supplier id; the existing normal-XO query is left untouched.
+3. Per supplier, an `openingXo` array is built (columns `date, xo, pax, branch, remarks, net`). PKR amount = `total_costing × exchange_rate`. XO date = `costs.created_at`.
+4. The report date filter is applied with `dayKey` (calendar-date compare). Opening XOs dated **before** the period fold into **Opening Balance B/F**; XOs **inside** the period show in the section.
+5. New `Opening XO` section renders **immediately after Refund Ticket Bookings** in both Excel and the EJS/PDF template.
+6. Summary gets an **"Add Opening XO"** line (`summary.openingXoTotal`); it **increases** the payable, so Net Balance = `opening + sales + openingXO - refunds - payments - advances + jvCredits - jvDebits`. Added to the controller `netBalance`, the Excel `calculatedNetBalance`, and the EJS `calculatedNetBalance`.
+
+**Files Modified**:
+- `psback/services/openingXo.service.js` — added `getOpeningCostsForSuppliers`.
+- `psback/controllers/report.controller.js` — import, opening-XO fetch + grouping, per-supplier `openingXo` build, `openingXoTotal` in summary, `Opening XO` Excel section, `Add Opening XO` summary row.
+- `psback/views/pages/reports/supplier-account-statement.ejs` — `Opening XO` table after Refund Ticket Bookings, `Add Opening XO` summary line, `openingXoTotal` in `calculatedNetBalance`.
+
+**Double-count fix (historical loop)**:
+- The historical opening-balance loop scans **every cost of the supplier before the start date** and has **no costing-document filter**, so it also picked up opening XO costs (which have a `Printed` cost row but no `documents` row).
+- That made pre-period opening XOs count **twice** in the next period's Opening Balance B/F — once by the historical loop, once by the Opening XO section's `openingXoBeforeStartTotal`.
+- Fix: the historical cost loop now skips `is_opening` costs (`if (service.Cost && !service.Cost.is_opening)`). Opening XOs are counted in **one place only** — the Opening XO section.
+
+**Edge cases handled**:
+- Opening XO before the period → folded into Opening Balance B/F exactly once (historical loop skips `is_opening` costs).
+- Foreign-currency XO → converted to PKR via `total_costing × exchange_rate`.
+- Only XO statuses `Printed / Partially Paid / Paid` are included.
+- Supplier with no opening XOs → empty section is skipped, `openingXoTotal = 0`.
+
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -992,5 +1025,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-04-28 — Section 16.5 (duplicate Void+Printed debit notes per refund) and Section 16.6 (shared-settlement payment double-counting in vouchers and opening balance)
+**Last Updated**: 2026-05-19 — Section 16.7 (Opening XO section added after Refund Ticket Bookings, with "Add Opening XO" summary line)
 

@@ -182,6 +182,30 @@ The Customer Account Statement Report:
 
 **Purpose**: Calculate customer's account balance as of the start date (before the report period)
 
+> **Note (2026-05-19)**: This calculation now lives in the shared helper
+> `psback/services/customerOpeningBalance.service.js` (`getCustomerOpeningBalances`).
+> It was extracted verbatim from this controller — no behaviour change — so the
+> **Customer Position Report** can call the same helper and produce the identical
+> Opening Balance B/F. Both reports now share one source of truth.
+>
+> **Fix (2026-05-20) — frozen exchange rate missing in historical attributes**:
+> The historical invoice include was loading invoice attributes but `exchange_rate`
+> was NOT in the list, so `inv.exchange_rate` was always `undefined`, the
+> `storedInvRate > 1` check failed, and the helper fell back to the **live**
+> currency-table rate instead of the **frozen** rate from print time. Any
+> foreign-currency invoice whose live rate differed from its frozen rate was
+> valued incorrectly in the opening balance — so the previous period's Net
+> Balance didn't carry forward to the next period's Opening Balance B/F.
+>
+> Example: QKCOMP, invoice TTIN00000025 (Hotel, 1,650 AED). Frozen rate = 78.42
+> → period values it at 129,393 PKR. Live rate = 76.45 → helper valued it at
+> 126,142.50 PKR. Gap = 3,250.50, which surfaced as the missing 3,250.50 between
+> March's Net Balance and April's Opening Balance B/F.
+>
+> **Fix**: added `'exchange_rate'` to the `attributes` list of the historical
+> `db.invoice` include in `customerOpeningBalance.service.js`. Same logic and
+> formula — only the missing attribute was added.
+
 **Formula**:
 ```
 Opening Balance = Historical Invoices
@@ -354,9 +378,11 @@ Columns:
 - Rebate (calculated as basePrice * invoice.rebate%)
 - T.Fee (transaction_fee)
 - SST (calculated as transactionFee * invoice.sst%)
-- Net (total calculated amount)
+- Supp Fee (invoice.customer_supplementary_fee, split per passenger)
+- Net (total calculated amount, including the supplementary fee)
 
-Each passenger creates a row.
+Each passenger creates a row. The supplementary fee, transaction fee, and SST are per-invoice
+totals, so each is divided by the number of passengers for the per-passenger row values.
 
 #### 2. **Hotel Bookings**
 Columns:
@@ -690,6 +716,36 @@ All amounts automatically converted to PKR. For invoices, the exchange rate froz
 
 ### 11.9 Multiple Passengers
 Flight refunds and bookings create one row per passenger per invoice.
+
+### 11.9.1 Supplementary Fee on Ticket Bookings
+The `invoice.customer_supplementary_fee` (set when the supplementary checkbox is ticked on the
+invoice) is included in the Customer Account Statement for ticket/Air bookings:
+- Shown in its own **Supp Fee** column in the Ticket Booking table (PDF and Excel).
+- Added into the per-passenger **Net** (split by passenger count, like T.Fee and SST).
+- Counted in **Total Sales** and in the **Opening Balance B/F** (historical Air calc), so the
+  report value matches the invoice's stored `total_price`.
+- Hotel and General bookings already include it implicitly because they value invoices from
+  `total_price`, which is saved with the supplementary fee at invoice create/update time.
+
+### 11.10 Unified Date Boundary (Opening Balance vs Period) — IMPORTANT
+The report values invoices in two places: the **period sections** ("Total Sales") and the
+**Opening Balance B/F** (historical calc). Both MUST use the **same** start-of-period date
+boundary, otherwise an invoice dated near a month boundary is classified into the period by
+one calc and into the opening balance by the other — so one report's closing balance no
+longer equals the next report's opening balance (a reconciliation gap).
+
+**Rule:** the historical/opening-balance invoice cutoff uses a single shared constant
+`historicalCutoff = moment(startDate).startOf('day').toDate()`, which is the **exact same**
+boundary the period sections use via `dateFilterInfo.start` / `dateFilterInfo.date`.
+
+- ❌ Do NOT use a raw `new Date(startDate)` for the historical invoice cutoff — that is UTC
+  midnight, while the period calc uses moment local-midnight; on a non-UTC server they differ
+  by the timezone offset and month-boundary invoices get mis-classified.
+- ✅ Always compare the invoice date against `historicalCutoff` so an invoice is counted in
+  the opening balance **if and only if** it is before the period — never in both, never in
+  neither.
+
+This guarantees: previous period's Net Balance == next period's Opening Balance B/F.
 
 ---
 

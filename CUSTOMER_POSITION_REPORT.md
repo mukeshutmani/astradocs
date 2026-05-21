@@ -57,7 +57,8 @@ One row per customer with summary totals:
 | Customer No. | `customer_no` | Customer number |
 | Customer Name | `customer_name` | Customer name |
 | Opening Balance B/F | `opening_balance` | Balance before report period |
-| ADD: Sales Invoice | `sales_invoice` | Period invoice total |
+| ADD: Sales Invoice | `sales_invoice` | Period invoice total (ordered invoices) |
+| ADD: Opening Invoices | `opening_invoices` | Period imported opening invoice total |
 | LESS: Refunds | `refunds` | Period credit note total |
 | LESS: Receipts | `receipts` | Period receipts + deposits combined |
 | ADD: Payments | `payments` | Payment settlements TO customer (via credit notes) |
@@ -79,10 +80,12 @@ Uses `calculateCustomerBalance` helper:
 
 **Air Services**:
 ```
-netPerPassenger = farePerPax + taxesPerPax - discountPerPax - rebatePerPax + tFeePerPax + sstPerPax
+netPerPassenger = farePerPax + taxesPerPax - discountPerPax - rebatePerPax + tFeePerPax + sstPerPax + suppFeePerPax
 netPerPassengerPKR = netPerPassenger × exchangeRate
 invoiceTotal = netPerPassengerPKR × numberOfPassengers
 ```
+`suppFeePerPax` = `invoice.customer_supplementary_fee` divided by the number of passengers
+(the supplementary fee is a per-invoice total, split per passenger like T.Fee and SST).
 
 **Hotel Services**:
 ```
@@ -98,23 +101,32 @@ invoiceTotal = totalAmount × exchangeRate
 
 ### Opening Balance
 
+Computed by the **shared helper** `psback/services/customerOpeningBalance.service.js`
+(`getCustomerOpeningBalances`) — the **same** helper the Customer Account Statement uses,
+so the two reports always show the identical Opening Balance B/F.
+
 ```
 openingBalance = historicalInvoices
-               - historicalReceipts (GL account payments only)
                - historicalCreditNotes
+               - historicalReceipts (GL account payments only)
                - historicalDeposits (full values)
                + historicalPayments (payments TO customer)
                + historicalJvDebit
                - historicalJvCredit
 ```
 
-Historical data = all transactions BEFORE the report's startDate.
+Historical data = all transactions BEFORE the report's startDate. The helper applies the
+Air per-passenger valuation and the foreign-currency credit-note conversion, so opening
+balance reconciles with the previous period's Net Balance.
+
+Pre-period **opening invoices** are added on top of this (folded into Opening Balance B/F).
 
 ### Net Balance
 
 ```
 netBalance = openingBalance
            + periodInvoiceTotal
+           + periodOpeningInvoices (imported opening invoices)
            - periodRefunds (credit notes only)
            - periodReceipts (receipts + deposits combined)
            + periodPayments (payments TO customer)
@@ -129,6 +141,7 @@ netBalance = openingBalance
 - **Receipts** only count **GL account payments** (deposit payments excluded to avoid double-counting)
 - **Credit notes**: Foreign currency ones use `amount_base` (PKR converted); PKR ones (currency_id = 110) use `amount` directly
 - **Journal entries**: Only `Manual JE` batch type, status `Open` or `Posted`, matched by `gl_entity_id` = customer_id
+- **Supplementary fee**: `invoice.customer_supplementary_fee` is included in the Sales Invoice total and Net Balance. For Air invoices it is split per passenger and added to the per-passenger Net; for Hotel/Other it is already part of `total_price`. Opening balance (historical) values invoices from `total_price`, which already includes the supplementary fee.
 
 ---
 
@@ -238,6 +251,48 @@ All currency exchange rate queries (deposits, historical deposits) also filter b
 | `psback/views/pages/reports/report2.ejs` | PDF template |
 | `psback/routes/report.route.js` (line 56) | Route definition |
 | `psfront/src/api/report.js` | API client |
+
+---
+
+## Recent Updates
+
+### Opening Balance — Shared with Customer Account Statement (2026-05-19)
+
+**Problem**: The Customer Position Report's "Opening Balance B/F" did not match the Customer Account Statement for the same customer and dates (example: TAH690, Apr 2026 — Position Report 3,800,696.42 vs Account Statement 3,782,591.00, off by 18,105.42). Every other line matched; only the opening balance was wrong, which also threw off Net Balance.
+
+**Root cause**: The two reports computed opening balance with **two different code paths**. The Position Report used the older `calculateCustomerBalance` helper, which lacked the Air per-passenger valuation fix and the foreign-currency credit-note conversion fix that the Account Statement has.
+
+**Solution Implemented**:
+1. The Account Statement's opening-balance calculation was extracted **verbatim** into a shared helper — `psback/services/customerOpeningBalance.service.js` → `getCustomerOpeningBalances(...)`.
+2. The Customer Account Statement now calls this helper (pure code move — no behaviour change).
+3. The Customer Position Report now calls the **same** helper for "Opening Balance B/F" instead of `calculateCustomerBalance`'s opening balance. `calculateCustomerBalance` is still used for the period figures (refunds, receipts, deposits).
+4. The two reports can no longer drift apart — one source of truth.
+
+**Files Modified**:
+- `psback/services/customerOpeningBalance.service.js` — new shared helper.
+- `psback/controllers/report.controller.js` — `getCustomerAccountStatementReport` (inline block replaced with a helper call) and `getCustomerPositionReport` (opening balance now from the helper).
+
+**Note**: in the Position Report, the old `historicalPaymentsTotal` / `historicalJvDebitTotal` / `historicalJvCreditTotal` variables are now unused (the helper computes those internally); left in place to keep the change minimal.
+
+### Add Opening Invoices Column (2026-05-19)
+
+**Goal**: Show imported **opening invoices** as their own **"ADD:Opening Invoices"** column, so the Customer Position Report lines up column-by-column with the Customer Account Statement.
+
+**What it was before**:
+1. The report builds its invoice list from `orders INNER JOIN services`.
+2. Opening invoices have **no order**, so they were **completely excluded** — not in "ADD:Sales Invoice", not in "Opening Balance B/F".
+3. Every customer with opening invoices was understated.
+
+**Solution Implemented**:
+1. Reuses `getOpeningInvoicesForCustomers(companyCode, customerNumbers)` from `psback/services/openingInvoice.service.js`; opening invoices fetched once and grouped by customer number.
+2. A per-customer opening invoices total is built with the report date filter (`dayKey`): pre-period ones fold into Opening Balance B/F, in-period ones go to the new column. PKR = `total_price × exchange_rate`.
+3. New `opening_invoices` ("ADD:Opening Invoices") column added right after "ADD:Sales Invoice"; included in the `net_balance` formula.
+4. Excel: `_invoices` added to the amount-column regex so the column is right-aligned and number-formatted. PDF (`report2.ejs`) renders the column automatically (dynamic template — no template edit).
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getCustomerPositionReport`) — opening-invoice fetch + grouping, per-customer opening invoices total, `opening_invoices` column, opening balance + `net_balance` formula, Excel amount-column regex.
+
+**Known limitation**: the early-exit path used when a company has **zero ordered services** does not include opening invoices (rare scenario).
 
 ---
 

@@ -1,9 +1,9 @@
 # AR Ageing Analysis Summary Report - Technical Documentation
 
-**Version**: 1.4
-**Date**: 2026-05-11
+**Version**: 1.5
+**Date**: 2026-05-15
 **Author**: System Analysis
-**Status**: Stable — PDF/Excel parity (v1.4), Detail/Summary parity (v1.3)
+**Status**: Stable — Manual JE settlement now subtracted from outstanding (v1.5); PDF/Excel parity (v1.4), Detail/Summary parity (v1.3)
 
 ---
 
@@ -142,6 +142,28 @@ The Summary Report totals must match the Detail Report:
 ---
 
 ## Version History
+
+### Version 1.5 (2026-05-15)
+
+Brings the Summary controller into parity with the Detail report v1.9 for Manual JE settlements.
+
+- **Manual JE settlement included in outstanding** — Previously the Summary only subtracted `receipt_settlement_invoice` amounts. If an invoice was settled (fully or partially) via a Manual JE batch referencing the invoice number in `analysis_code1`, that adjustment was ignored — the aging buckets and `Total Outstanding` showed the pre-JE figure.
+
+    **Fix** (`psback/controllers/report.controller.js` inside `getARAgeingAnalysisSummaryReport`):
+    1. After `allInvoicesSummary` is fetched, an inline query reads `journal_entries` (joined to `journal_batches`) filtered to live Manual JE rows for those invoice numbers: `batch_type = 'Manual JE'`, `journal_batch.status != 'Void'`, and `description NOT LIKE 'VOID REVERSAL -%'`.
+    2. Results are grouped into `Map<invoice_number, manualJePKR>` (debit + credit per row, summed across rows).
+    3. In the per-invoice group loop, `invoiceOutstanding = group.totalAmountPKR - group.totalSettledPKR - manualJePKR`.
+
+    **Void behavior (automatic)**:
+    - When a Manual JE batch is voided, its `status` flips to `Void` → all rows excluded.
+    - The reversal batch posted by `voidBatch` carries `description` prefix `VOID REVERSAL -` on every row → also excluded.
+    - Net effect: a voided JE contributes zero, so the invoice's outstanding pops back to its pre-JE value on the next report run.
+
+    **Performance**: one batched query for all invoice numbers in the current report; no N+1 per customer. Runs inside the same Sequelize transaction as the rest of the report fetches.
+
+    **Scope notes**:
+    - Logic was written inline in the controller (not in `manualJeAdjustment.js`) to keep the change contained to the report.
+    - Mirrors the where-clause shape used by `manualJeAdjustment.js`'s `liveManualJeWhereClause`. Detail report (v1.9) carries the same inline implementation; future changes there should be cross-applied here.
 
 ### Version 1.0 (February 2026)
 - Initial implementation with customer aging summary
