@@ -1,10 +1,11 @@
-# Invoice/XO Opening Report
+# Opening Documents (report)
 
 ## Purpose
 
-Lists the **imported opening documents** — opening invoices (`invoices.is_opening = 1`) and
-opening XOs (`costs.is_opening = 1`) — brought into Astra via the Opening Invoice Import and
-Opening XO Import features. One report, two possible sections.
+Lists the **imported opening documents** — opening invoices (`invoices.is_opening = 1`),
+opening XOs (`costs.is_opening = 1`), opening credit notes (`credit_notes.is_opening = 1`)
+and opening debit notes (`debit_notes.is_opening = 1`). The **Document** filter chooses
+exactly **one** type, and the report shows that single section.
 
 ---
 
@@ -12,36 +13,40 @@ Opening XO Import features. One report, two possible sections.
 
 | Filter | Notes |
 |---|---|
-| **Document** | Dropdown: `Invoice`, `XO`, `All`. Decides which section(s) are shown. |
-| **Date** | Operator (`=`, `<`, `<=`, `>`, `>=`, `<>`, `between`) + date(s). Invoice rows filter on `invoice_date`, XO rows on the XO date (`costs.created_at`). |
-| **Supplier** | XO side only. |
-| **Customer** | Invoice side only. |
-| **Branch** | The 2-letter branch code (`KH`, `TT`, `TP`, …). Matches the prefix of the document number (`KHOX…`, `KHOI…`). |
+| **Document** | Dropdown: `Invoice`, `XO`, `Credit`, `Debit` (no "All"). Decides which single section is shown. |
+| **Date** | Operator (`=`, `<`, `<=`, `>`, `>=`, `<>`, `between`) + date(s). Invoice → `invoice_date`; XO → `costs.created_at`; Credit/Debit → `doc_date`. |
+| **Supplier** | Shown only for `XO` / `Debit`. |
+| **Customer** | Shown only for `Invoice` / `Credit`. |
+| **Branch** | The 2-letter branch code (`KH`, `TT`, `TP`, …). Matches the prefix of the document number (`KHOX…`, `KHOI…`, `KHOC…`, `KHOD…`). |
 
 ### Filter-combination rules (popups)
 
-Supplier belongs to the XO side; Customer belongs to the Invoice side.
+Supplier belongs to the **XO / Debit** side; Customer belongs to the **Invoice / Credit** side.
 
-1. **Supplier** selected + Document = `Invoice` or `All` → popup: *"Please select Document type XO."*
-2. **Customer** selected + Document = `XO` or `All` → popup: *"Please select Invoice for Document type."*
-3. Document = `All` + no Customer + no Supplier → report shows **both sections** (Opening XO + Opening Invoices).
-4. Document = `XO` → XO section only. Document = `Invoice` → Invoice section only.
+1. **Supplier** selected + Document not `XO`/`Debit` → popup: *"Please select XO or Debit Note for the Supplier filter."*
+2. **Customer** selected + Document not `Invoice`/`Credit` → popup: *"Please select Invoice or Credit Note for the Customer filter."*
 
-The popup is shown by the frontend before the request; the backend also returns a `400`
-with the same message as a safety guard.
+The frontend also auto-clears the supplier/customer value when the document type changes so
+the wrong party filter can't be sent. The backend returns a `400` with the same message as a
+safety guard.
 
 ---
 
 ## 2. Report Columns
 
-### Opening XO section
-`XO No`, `Date`, `Supplier`, `Currency`, `Ex. Rate`, `Amount`, `Status`
+All four sections use the **same 8-column layout** (only the party-column header differs):
 
-### Opening Invoices section
-`Invoice No`, `Date`, `Customer`, `Currency`, `Ex. Rate`, `Amount`, `PAX`, `Status`
+| Section | Columns |
+|---|---|
+| **Opening XO** | `Document No`, `Date`, **`Supplier`**, `Currency`, `Ex. Rate`, `Amount`, `PAX`, `Status` |
+| **Opening Invoices** | `Document No`, `Date`, **`Customer`**, `Currency`, `Ex. Rate`, `Amount`, `PAX`, `Status` |
+| **Opening Credit Notes** | `Document No`, `Date`, **`Customer`**, `Currency`, `Ex. Rate`, `Amount`, `PAX`, `Status` |
+| **Opening Debit Notes** | `Document No`, `Date`, **`Supplier`**, `Currency`, `Ex. Rate`, `Amount`, `Status` (no PAX) |
 
-`Amount` is the imported document amount in its own currency (`costs.total_costing` /
-`invoices.total_price`). Each section shows a **Total** of the Amount column.
+`Amount` is the imported document amount in its own currency (`costs.total_costing`,
+`invoices.total_price`, `credit_notes.billing_amount`, `debit_notes.billing_amount`).
+`PAX` is the imported passenger name (blank for XO). Each section shows a **Total** of the
+Amount column.
 
 Excel and PDF use the **same layout and columns**.
 
@@ -54,7 +59,8 @@ Excel and PDF use the **same layout and columns**.
 - Registered in `psback/controllers/reports/index.js`.
 - **Route**: `POST /report/invoiceXoOpeningReport` in `psback/routes/report.route.js`, gated by `authenticate` + `permission("Invoice-Xo-Opening-Report")`.
 - **PDF template**: `psback/views/pages/reports/invoice-xo-opening-report.ejs`.
-- Data is company-scoped through the `import_batches` table (`company_id`, `batch_type` `XO` / `INV`).
+- Data is company-scoped through the `import_batches` table (`company_id`, `batch_type` `XO` / `INV` / `CN` / `DN`).
+- `report_type` = `opening-documents-report`. Route, controller file name and the `Invoice-Xo-Opening-Report` permission are unchanged (only the display title is "Opening Documents").
 
 ### Frontend
 - **Page**: `psfront/src/pages/Report/InvoiceXoOpeningReport.jsx`.
@@ -65,11 +71,11 @@ Excel and PDF use the **same layout and columns**.
 ### Request body
 ```
 {
-  documentType: "invoice" | "xo" | "all",
+  documentType: "invoice" | "xo" | "credit" | "debit",
   dateFilter:   "blank" | "=" | "<" | "<=" | ">" | ">=" | "<>" | "between",
   startDate, endDate,
-  supplier_id,        // XO filter
-  customer_id,        // Invoice filter (resolved to customer_number server-side)
+  supplier_id,        // XO / Debit filter
+  customer_id,        // Invoice / Credit filter
   branchCode,         // 2-letter prefix
   type: "pdf" | "excel"
 }

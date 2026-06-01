@@ -51,7 +51,12 @@ Accepted formats: `.xlsx` (priority), `.xls`. CSV not supported.
     shown in the Import History tab with delete (blocked if any DN has a settlement/payment).
 11. **Preview-then-import** — upload → green/red preview → all-or-nothing confirm.
 12. **Single currency per file**; cross-branch / cross-supplier allowed in one file.
-13. Access gated by `IMPORT_ENABLED` env flag.
+13. Gated by the `IMPORT_ENABLED` env flag — **write actions only**. When `false`:
+    upload (`/preview`, `/confirm`) and batch **delete** return `403`, and the frontend
+    blocks the Choose-file button (popup *"Import Disabled"*) and disables Preview/Confirm
+    + the trash icon. **Read-only Import History and the Template download stay available**
+    so users can still review past imports. The frontend reads the flag via `GET /import-status`
+    (auth-only, ungated) through the `useImportEnabled()` hook.
 
 ---
 

@@ -106,7 +106,7 @@ Accepted formats: `.xlsx` (priority), `.xls`. CSV not supported.
 | Phase 1 (done) | XO import — upload, preview, confirm, history, delete. |
 | Phase 2-A (done) | Opening XOs shown in **Documents → XO tab**. |
 | Phase 2-B (done) | Opening XOs shown in the **Supplier Payment** list (clickable → detail popup). |
-| Phase 2-C (later) | Settling an opening XO via Supplier Payment (payment-save must derive branch from the XO number prefix — mirror of the `settleReceipt` fix for opening invoices). |
+| Phase 2-C (done) | Settling an opening XO via Supplier Payment. `settlePayment` (`payment.controller.js`) derives the branch from the XO number prefix (e.g. `TTOX…` → `TT`) when the cost has no order/branch — mirror of the `settleReceipt` fix for opening invoices. |
 
 ### Phase 2-B — Supplier Payment list (built)
 1. `openingXo.service.js` → `getOpeningCostsForSupplier(companyCode, supplierId)` returns the

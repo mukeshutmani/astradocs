@@ -51,7 +51,12 @@ Accepted formats: `.xlsx` (priority), `.xls`. CSV not supported.
     shown in the Import History tab with delete (blocked if any CN has a settlement/payment).
 11. **Preview-then-import** — upload → green/red preview → all-or-nothing confirm.
 12. **Single currency per file**; cross-branch / cross-customer allowed in one file.
-13. Access gated by `IMPORT_ENABLED` env flag.
+13. Gated by the `IMPORT_ENABLED` env flag — **write actions only**. When `false`:
+    upload (`/preview`, `/confirm`) and batch **delete** return `403`, and the frontend
+    blocks the Choose-file button (popup *"Import Disabled"*) and disables Preview/Confirm
+    + the trash icon. **Read-only Import History and the Template download stay available**
+    so users can still review past imports. The frontend reads the flag via `GET /import-status`
+    (auth-only, ungated) through the `useImportEnabled()` hook.
 
 ---
 
@@ -87,6 +92,16 @@ Accepted formats: `.xlsx` (priority), `.xls`. CSV not supported.
 - Route `iur/cn-import` in `App.jsx`; sidebar entry **"Credit Note Import"** under the Import section.
 - Reuses `pages/InvoiceImport/ImportAlertDialog.jsx` for centered alerts.
 
+### Phase 2 — Documents → Credit Note tab (built)
+- `psback/services/openingCn.service.js` → `getOpeningCreditNotesAsDocuments(req)` shapes opening
+  CNs (`is_opening = 1`) like the rows the Credit Note tab expects; company-scoped via the import batch.
+- `credit_note.controller.js` `getCreditNotes` appends these rows (existing normal-CN query untouched —
+  separate block: `[...openingCreditNotes, ...filteredCreditNotes]`).
+- In the list, an opening CN number is **clickable** → opens a centered detail popup
+  (`psfront/src/components/OpeningCreditNoteDialog.jsx`); small **"opening cn"** text under the number;
+  Order No. and View Refund blank for opening CNs; the batch-void checkbox is shown faded/disabled
+  (opening CNs are not batch-void-selectable).
+
 ### Storage of one imported credit note
 One `credit_notes` row with:
 - `customer_id` resolved from `CUSTNO`
@@ -108,6 +123,6 @@ One `credit_notes` row with:
 
 | Phase | Scope |
 |---|---|
-| Phase 1 (this) | CN import — upload, preview, confirm, history, delete, template. |
-| Phase 2 (later) | Opening CNs shown in Documents → Credit Note tab and Receipt Settlement. |
-| Phase 3 (later) | Settling an opening CN via Receipt Settlement (mirror of opening invoice / opening XO settlement). |
+| Phase 1 (done) | CN import — upload, preview, confirm, history, delete, template. |
+| Phase 2 (done) | Opening CNs shown in **Documents → Credit Note tab** (clickable → detail popup, "opening cn" label, faded/disabled batch-void checkbox). |
+| Phase 3 (later) | Settling an opening CN (apply it in a Credit Note Payment / Receipt settlement, with branch derived from the CN number prefix — mirror of the opening-XO settlement). |
