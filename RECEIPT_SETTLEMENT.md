@@ -1,9 +1,9 @@
 # Receipt Settlement - Technical Documentation
 
-**Version**: 1.0
-**Date**: March 2026
+**Version**: 1.1
+**Date**: June 2026
 **Author**: System Analysis
-**Status**: Stable
+**Status**: Stable — v1.1 fixes multi-currency invoice aggregation in the settlement listing (foreign-currency lines were summed without conversion)
 
 ---
 
@@ -74,6 +74,7 @@ The settlement page has the following sections (top to bottom):
 - **Select All**: Checkbox in header selects/deselects all filtered invoices
 - **Pay Amount**: Editable when selected; defaults to full outstanding. Changing group pay amount distributes proportionally across invoices in the group.
 - **Total row**: Shows sum of all selected invoice pay amounts
+- **Amount formatting**: Invoice Amount, Outstanding, Pay, and Total are displayed with exactly 2 decimal places using `toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })`, which rounds to 2 decimals (e.g. 123,227.804 → 123,227.80, 123,227.807 → 123,227.81). Display-only; saved settlement amounts are rounded to 2 decimals by `settleReceipt`.
 
 ### 4. Deposits Section
 - Visible only when a customer is selected
@@ -276,6 +277,14 @@ The entire operation runs inside a Sequelize transaction with row-level locking.
 - Converted to PKR using `invoice.exchange_rate` or latest currency rate
 - All settlement amounts in `receipt_settlement_invoice` are stored in PKR
 
+### Multi-Currency Invoice Aggregation in the Listing (v1.1)
+- The settlement listing (`getOrdersByCustomerId` in `psback/controllers/customer.controller.js`) groups the lines of one invoice (same `invoice_number`/`document_number`) into a single row.
+- **Bug (pre-v1.1):** each line's `total_price` was summed in its **own** currency and the group kept only the **first** line's exchange rate. An invoice mixing PKR flight lines with an AED hotel line (e.g. 59,050 + 26,050 PKR + 486.20 AED) showed **85,586.20** — the AED line was added at face value instead of × its rate.
+- **Fix:** each line is now normalized to PKR using **its own** `exchange_rate` (`total_priceInPKR = total_price × rate`) **before** being aggregated. `previousAmount` is kept directly in PKR (settlement rows are already PKR). The returned group carries `exchange_rate: 1` because its amounts are already in PKR, so the frontend's `amount × exchange_rate` math is unchanged.
+- Result: the same invoice now correctly shows **123,227.80** (59,050 + 26,050 + 486.20 × 78.42).
+- The settlement **save** (`settleReceipt`) was already currency-correct — it re-reads each invoice's rate from the DB (`invoice.controller.js` ~2146) and allocates the PKR payment across lines by their PKR remaining balances; it does not rely on the rate sent by the listing.
+- Opening (imported) invoices are listed one-per-entry and remain in source currency with their real rate — they never had the cross-currency merge problem and were left unchanged.
+
 ---
 
 ## Validation Rules
@@ -337,7 +346,7 @@ The entire operation runs inside a Sequelize transaction with row-level locking.
 The settlement-page invoice listing (`getOrdersByCustomerId` in `psback/controllers/customer.controller.js`) reflects Manual JE settlements as well as receipt-settlement records. This keeps the listing in sync with `invoice.status` (which is already updated by `recalculateInvoiceStatusByNumber` when a Manual JE is created/edited/voided — see `docs/JOURNAL_ENTRIES_PLAN.md` item 12).
 
 1. After invoices are grouped by `invoice_number`/`document_number`, the controller calls `sumManualJeAdjustment(invoice_number)` once per unique invoice number (from `services/manualJeAdjustment.js`).
-2. The returned PKR adjustment is divided by the group's `exchangeRate` and added to `previousAmount` (group's paid-so-far, in source currency).
+2. The returned PKR adjustment is divided by the group's `exchangeRate` and added to `previousAmount`. Since v1.1, order-based listing groups carry `exchange_rate: 1` and a PKR `previousAmount` (so this is effectively a no-op divide); opening-invoice groups still hold source-currency amounts with their real rate.
 3. Outstanding (`total_price - previousAmount`) then subtracts the JE; status flips to `Partially Settled` when JE > 0 and to `Settled` (filtered out of the listing) when JE fully clears the invoice.
 4. Manual JE rows that belong to a `Void` batch or are themselves `VOID REVERSAL -` rows are excluded by `sumManualJeAdjustment`'s filter, so a voided JE nets the invoice back to its prior state automatically.
 
