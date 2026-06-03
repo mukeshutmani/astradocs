@@ -56,7 +56,7 @@ The Daily Sale Report provides a comprehensive daily view of sales and costs bro
 |---------|---------|
 | Invoice Info | Invoice No., Inv. Date, PNR, Status, Client Name |
 | Receivable from Customer | Air, Visa, Hotel, Ins, Car, Cruise, Tour, Train, Misc, Total Sales |
-| Payable to Supplier | XO Number, Supp Name, Air, Visa, Hotel, Ins, Car, Cruise, Tour, Train, Misc, Total Cost, SST |
+| Payable to Supplier | XO Number, Status, Supp Name, Air, Visa, Hotel, Ins, Car, Cruise, Tour, Train, Misc, Total Cost, SST |
 | Profit/Loss | Sales - Cost |
 | Pax | Passenger names (comma-separated) |
 
@@ -77,6 +77,7 @@ Summary table totals are computed from the pre-grouping per-service data, so gra
 
 **Payable side columns:**
 - **XO Number** — `cost.Document.document_number` where `document_type = 'costing'` (the cost order / XO linked to the active cost record)
+- **Status** — the active cost's own `status` (e.g. Printed, Raised, Void, Settled). `Partially Settled` is displayed as **PS**. Sits immediately after XO Number. Blank on the TOTAL row and when no valid XO exists. Carried through the XO grouping (`xo_status`), so each secondary/extra-XO row shows its own XO's status.
 - **Supp Name** — `service.Supplier.supp_name` (supplier linked to the service)
 
 **Status display:** `Partially Settled` is displayed as **PS** (abbreviated) in both PDF and Excel.
@@ -153,11 +154,22 @@ profitLoss = invoiceTotal - totalCost - sstAmount
 ### Active Cost Selection
 
 When multiple costs exist for a service:
-1. Filter out costs with status `Void` or `Raised` (Void = cancelled, Raised = draft/not finalized)
+1. Filter out costs with status `Void` or `Raised` **unless that status was explicitly selected in the Document Status filter** (Void = cancelled, Raised = draft/not finalized). See *XO status follows the Document Status filter* below.
 2. Sort by `created_at` descending (most recent first)
 3. Use the first (most recent) eligible cost
 
-**When no valid cost exists** (all costs are Void/Raised, or the service has no cost record), the **entire supplier side is blanked** for that row:
+### XO status follows the Document Status filter
+
+The XO/supplier side respects the **same Document Status filter** as the invoice side:
+- **Raised** is selected → Raised XOs are shown on the supplier side (XO Number, Supp Name, costs, SST) and counted in Total Cost and Profit/Loss — same as the invoice side shows the full sale.
+- **Void** is selected → Void XOs are shown the same way. The cost query also stops excluding Void costs (`where: {}`) so they are loaded; otherwise the DB query keeps `status != 'Void'`.
+- Neither selected (default) → Void and Raised XOs stay hidden / blanked (legacy behavior, unchanged).
+
+To see, e.g., Printed invoices together with their Raised XOs, select **both Printed and Raised** using the multi-select (`in`) mode. Because the filter also drives the invoice status, a Raised XO only appears if its invoice is itself within the selected statuses.
+
+Implemented via two flags (`allowRaisedXO`, `allowVoidXO`) derived from `documentStatusFilter` / `document_status`, used by both the cost query `where` and the `isInvalidXOStatus` picker.
+
+**When no valid cost exists** (all costs are Void/Raised and not selected, or the service has no cost record), the **entire supplier side is blanked** for that row:
 - XO Number → empty
 - Supp Name → empty
 - All payable per-service-type amounts → 0

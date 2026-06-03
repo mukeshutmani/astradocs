@@ -113,6 +113,7 @@ When the company's `invoice_settings.ticket_issue_date_in_invoice = 1`, the repo
 - The **Date column** displays the mapped date.
 - The **Date filter** runs in JavaScript against the mapped date; SQL `invoice_date` filter is skipped when the setting is on.
 - Date comparisons use Asia/Karachi (PKT) via `moment-timezone`, so UTC-stored dates are compared day-correctly against user-entered PKT dates.
+- The range boundaries are built by converting the **raw picked dates** to PKT **once** (`moment.tz(rawDate, 'Asia/Karachi').startOf/endOf('day')`). They are **not** pre-converted to `Date` in the server's local timezone first — doing so on a non-PKT server (e.g. UTC staging) double-applied `endOf('day')` and pushed the end boundary forward a day, leaking the next day's invoices (e.g. a 01 Jun invoice appearing in a 01–31 May range). Local PKT servers were unaffected because both conversions used the same zone.
 - Companies with the setting disabled keep using `invoice.invoice_date` at the SQL level (unchanged).
 
 ## Row order
