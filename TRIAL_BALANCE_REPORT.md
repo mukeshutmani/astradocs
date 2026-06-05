@@ -1,7 +1,12 @@
-# Trial Balance by Journal Entry Report
+# Trial Balance Report
+
+> On-screen title: **"Trial Balance Report"** (Reports → GL). Internally the controller is
+> `getTrailBalanceByJE` and the report record's `report_type` is `trail-balance-by-journal-entry`
+> for backward compatibility — but this is the Trial Balance (sheet) report, not a journal-entry
+> listing. (This doc was previously named `TRIAL_BALANCE_BY_JOURNAL_ENTRY.md`.)
 
 ## Overview
-The Trial Balance by Journal Entry report shows all account balances **as on** a single journal period (month). For every account it displays:
+The Trial Balance report shows all account balances **as on** a single journal period (month). For every account it displays:
 
 1. **Opening** (Debit / Credit) — cumulative balance from all entries **before** the selected period.
 2. **Activities** (Debit / Credit) — net movement **inside** the selected period.
@@ -33,6 +38,7 @@ Rows are broken down **per branch** and grouped by key account. Rollup (parent) 
 | Branch ID (`branch_id`) | Only when `branchFilter = isEqual` | Integer FK to `branch.id` |
 | Key Account Filter (`keyAccountFilter`) | No | `isBlank` / `isEqual` / `isNotBlank` (default) |
 | Key Account (`key_account`) | Only when `keyAccountFilter = isEqual` | Chart of account key |
+| Rollup/Detail (`rollupDetailFilter`) | No | `all` (default) shows rollup + detail rows; `rollup` shows only rollup (parent) rows; `detail` shows only detail (posting) rows. Display filter only — the Grand Total stays the true detail-level total. |
 | Show Zero (`show_zero`) | No | If false, rows with 0 opening & 0 activity are hidden |
 | Type (`type`) | No | `pdf` (default) or `excel` |
 
@@ -128,6 +134,7 @@ Rows are broken down **per branch** and grouped by key account. Rollup (parent) 
   "branch_id": 3,
   "keyAccountFilter": "isNotBlank",
   "key_account": null,
+  "rollupDetailFilter": "all",
   "show_zero": false,
   "type": "pdf"
 }

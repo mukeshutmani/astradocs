@@ -62,6 +62,18 @@ The Daily Sale Report provides a comprehensive daily view of sales and costs bro
 
 **Note:** Hajj and Umrah receivable/payable amounts are **folded into the Misc column** in the main table (so Misc shows `misc + hajj + umrah`). Hajj and Umrah are still tracked separately and appear as dedicated rows in the Summary table below.
 
+**PNR column (PDF):** The PNR column is shrink-to-fit (`width: 1%`, `.pnr-cell` class with wrapping ON). The column hugs the width of a single PNR; when an invoice has multiple PNRs (joined with `, ` in the controller), the extra PNRs **stack onto new lines** (taller row) instead of widening the column. Applies to the PDF template only.
+
+**Invoice No. & XO Number columns (PDF):** Both are kept as narrow as possible (`width: 3%`, `.wrap-narrow` class with `max-width: 40px`, `word-break: break-all`). Because invoice/XO numbers are single tokens with no spaces, a longer number **breaks across two lines** inside the column rather than forcing the column wider. Applies to the PDF template only.
+
+**Inv. Date column (PDF):** Inv. Date uses `.date-cell` — a shrink-to-fit cell (`white-space: nowrap`, `width: 1%`) so the column collapses to exactly the date width (`MM/DD/YYYY`, e.g. `05/07/2026`) with no padding space on the sides. Leftover table width is absorbed by the other columns. Applies to the PDF template only.
+
+**Status columns (PDF):** Both Status columns — invoice side and XO side — use `.shrink-fit` (`white-space: nowrap`, `width: 1%`) so each column hugs the widest status word (e.g. "Printed") with no surrounding space, staying on one line.
+
+**S-ID column (PDF):** The S-ID (Sales ID) column also uses `.shrink-fit`, so it collapses to exactly the ID width with no surrounding space, on one line.
+
+**Status abbreviations:** On the XO-side Status column (`row.xo_status`), `Partially Settled` → `PS` and `Partially Paid` → `PP`. The invoice-side Status column (`row.status`) shows `Partially Settled` → `PS`. This keeps the abbreviations consistent.
+
 **Row grouping — one row per invoice (with XO-based supplier split):**
 Per-service rows are grouped by `invoice_no`. The main table now emits:
 - **One primary row per invoice** carrying the **full customer-side sales** — every service's amount is placed in its matching column (Air→Air, Hotel→Hotel, Hajj/Umrah folded into Misc), plus the invoice's **Total Sales** and full **Profit/Loss**. All unique pax names from every service are shown on this row.
@@ -85,6 +97,10 @@ Summary table totals are computed from the pre-grouping per-service data, so gra
 ### Summary Table
 
 Breakdown by service category showing Total Sales, Total Cost, **SST**, and Profit/Loss per category, with a grand total row.
+
+**Summary table sizing (PDF):** The summary box is `width: 30%` (down from 50%) with tight cell padding (`2px 5px`) so the columns hug the numbers instead of leaving large empty gaps. Cell and header font is `10px` (larger than the main 28-column table) for readability. The table self-sizes to its content, so it will not go below the width its numbers need.
+
+**Main table font (PDF):** The main 28-column table is at its practical maximum font for one landscape page — cells/helpers `8px`, body `9px` (raised from `7px`/`8px`). To fit the larger font, the number columns' right padding was cut (`.amount` `8px → 2px`) and cell padding tightened (`1px 2px → 1px 1px`). Going larger risks money columns overflowing/clipping — if that happens, shrink the affected columns rather than raising the whole table.
 
 **SST per category:** Each invoice row is tied to exactly one service (via `invoices.service_id`), and SST is computed per invoice row as `(transaction_fee × sst%)/100`. That per-row SST is accumulated into the corresponding service type's bucket in `summary[type].sst`. Per-category Profit/Loss is:
 

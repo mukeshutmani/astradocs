@@ -102,6 +102,25 @@ Accepted formats: `.xlsx` (priority), `.xls`. CSV not supported.
   Order No. and View Refund blank for opening CNs; the batch-void checkbox is shown faded/disabled
   (opening CNs are not batch-void-selectable).
 
+### Credit Note Report (built)
+- `report.controller.js` `getCreditNoteReport` fetches opening CNs separately (company-scoped via the
+  CN import batches) and merges them per customer. Branch filter matches the CN-number prefix against
+  the branch's **`document_prefix`** (`{document_prefix}OC…`, e.g. `TT` → `TTOC…`). See `docs/CREDIT_NOTE_REPORT.md`.
+
+### Credit Note Payment / settlement (built — enables Phase 3)
+- The **Credit Note Payment** screen (`/payment-requisition`) lists a customer's credit notes via
+  `customer.controller.js` `getCustomersWithCreditNote` (`GET /customer/getCreditNotes`). That query walks
+  Customer → Orders → refunds → credit_note, so opening CNs (no refund/order) were missing.
+- Fix: after loading the customers, the controller fetches their opening CNs (company-scoped via the CN
+  import batches) and attaches each as a **synthetic order/refund** on the customer, so the existing
+  frontend list (`PaymentRequisition.jsx` `processCreditNoteData`) renders them with no frontend change.
+  "Order No." is blank for opening CNs.
+- **No settlement-write change needed.** `payment.controller.js` `settleCreditNote` keys only on
+  `credit_note_id` + `used_amount` and the chosen branch's `document_prefix` for the payment number — it
+  does not require a refund/order/branch on the CN. Settling an opening CN increments its `used_amount`;
+  its available balance (`amount − used_amount`) shrinks on the next load and it drops off the list once
+  fully settled.
+
 ### Storage of one imported credit note
 One `credit_notes` row with:
 - `customer_id` resolved from `CUSTNO`
@@ -124,5 +143,5 @@ One `credit_notes` row with:
 | Phase | Scope |
 |---|---|
 | Phase 1 (done) | CN import — upload, preview, confirm, history, delete, template. |
-| Phase 2 (done) | Opening CNs shown in **Documents → Credit Note tab** (clickable → detail popup, "opening cn" label, faded/disabled batch-void checkbox). |
-| Phase 3 (later) | Settling an opening CN (apply it in a Credit Note Payment / Receipt settlement, with branch derived from the CN number prefix — mirror of the opening-XO settlement). |
+| Phase 2 (done) | Opening CNs shown in **Documents → Credit Note tab** (clickable → detail popup, "opening cn" label, faded/disabled batch-void checkbox). Also shown in the **Credit Note Report** (branch filter by `document_prefix` prefix). |
+| Phase 3 (done) | **Credit Note Payment** (`/payment-requisition`) now lists and settles opening CNs. Backend injects opening CNs into `getCustomersWithCreditNote` as synthetic order/refunds; the existing `settleCreditNote` write handles them unchanged (keys on `credit_note_id` + `used_amount`; payment-doc branch chosen on screen). |

@@ -161,6 +161,11 @@ GROUP BY chart_of_account_id, branch_id
 - Validate period format (MMYYYY)
 - Handle cases where no data exists in range
 
+### 6a. Period Dropdown Behaviour (Start / End Period)
+- The Start/End Period dropdowns are built in `fetchJournalPeriods` (`TrailBalanceByJournalPeriod.jsx`) from `GET /jvPeriod`.
+- **Open periods only**: periods with `status = 1` are shown; closed periods (`status = 0`) are hidden.
+- **Latest first**: periods are sorted newest year/month at the top for quicker selection.
+
 ### 7. Testing Scenarios
 1. Single period (start = end)
 2. Multiple periods span

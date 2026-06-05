@@ -87,6 +87,16 @@ Column order (12): `CN Date | CN No. | Issue By | Status | Billing Currency | Ex
 
 ---
 
+## Opening (imported) credit notes
+
+Opening credit notes imported via **Opening CN Import** (`is_opening = 1`) have **no refund** and **no `branch_id`**, so the main credit-note query (which `require`s both a `refund` chain and a `branch`) excludes them. They are fetched **separately** and merged in:
+
+1. Company scope is resolved via the **CN import batches** (`import_batches.company_id` for `batch_type = 'CN'`), not via branch — because `branch_id` is null on these rows.
+2. The **same date, status, and customer filters** are applied (`doc_date`, `doc_status`, and the CN's own `customer_id`).
+3. **Branch filter** is matched by the **CN-number prefix**, which is the branch's **`document_prefix`** — **not** `branches.code`. (Example: branch *TESTING BRANCH* has `code = TEST01` but `document_prefix = TT`, and its opening CNs are numbered `TTOC…`.) A selected branch's `document_prefix` must match the start of `reference` as `{document_prefix}OC…` (e.g. `TT` → `TTOC00723682`). When **no specific branch** is selected (no filter / `isNotBlank` / `isBlank`), **all** opening CNs for the company are shown.
+4. Each opening CN is shaped like a normal refund row with a **blank refund** (Refund No., Invoice No., Original/Refund Segment show `N/A`); its own `pax_name` is used for Pax Name. It is enriched with the same currency logic (`is_foreign_currency`, `pkr_amount`, etc.) and pushed into the matching customer bucket, so it sorts by `doc_date` and rolls into subtotals/totals like any other CN.
+5. No template changes were needed — both PDF and Excel iterate the same `customer → Orders → refunds → credit_note` shape.
+
 ## Data Flow
 
 1. **Fetch** (inverted — credit-note-first): `db.credit_note.findAll` with required includes `branch` (company scope via `branches.company_code = req.user.company_code`) and `refund → Order → customer`. All chain joins use integer foreign keys (`credit_notes.refund_id`, `refunds.orderId`, `orders.customer_id`, `credit_notes.branch_id`) — **not** the default `order.hasMany(refund, sourceKey: 'order_number')` varchar join, which would cross-join because order numbers are not unique across customers/companies. After fetch, CNs are grouped by `customer.id` in JS and shaped into the same `customers → Orders → refunds → credit_note` structure the EJS template expects.
