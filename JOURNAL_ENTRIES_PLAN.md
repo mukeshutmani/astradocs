@@ -380,6 +380,20 @@ Total Credits: 307,810 ✓ Balanced
 - **Required setup per branch**: Add a Posting Rule mapping `RFSUP` → an income/admin-fee Chart of Account (e.g. `410135 - Supplementary Fee`) on the **debit** side, prefix `<branch_doc_prefix>CN`. Without this rule the imbalance persists for any CN whose refund has a supplementary fee.
 - **Existing unbalanced batches**: Need to be regenerated (null `je_generated` on the source CN, delete the batch, re-run "Generate System JE") after the posting rule is in place.
 
+### 7. Manual JE "Validation error" on batch creation (per-company batch_no)
+- **Symptom**: Creating a Manual JE in a company returns `{"error":"Validation error"}` and the batch is never created. Common right after a company's data is reset (its `journal_batches` count is 0).
+- **Root cause**: `batch_no` is generated **per company** (sequence scoped to the company's own branches, so a fresh company starts at `<PREFIX>JV000001`), but the `batch_no` column had a **global UNIQUE index**. Because the branch prefix (e.g. `KH`) is shared across companies, the freshly generated `KHJV000001` collided with another company's existing `KHJV000001` → Sequelize `SequelizeUniqueConstraintError` (message "Validation error"). The company stays stuck because it always recomputes `000001`.
+- **Fix — two parts**:
+  1. **Database (run once)**: replace the global unique on `batch_no` with a **per-company composite unique** so each company can hold its own `KHJV000001`:
+     ```sql
+     ALTER TABLE journal_batches
+       DROP INDEX batch_no,
+       ADD UNIQUE INDEX uq_batch_no_branch (batch_no, branch_id);
+     ```
+     Safe because no FK references `batch_no` (all reference `journal_batches.id`), and no existing `(batch_no, branch_id)` duplicates exist. Each company has exactly one KH branch, so `(batch_no, branch_id)` is effectively per-company.
+  2. **Code (`journal_entry.controller.js`)**: with `batch_no` no longer globally unique, every batch lookup-by-`batch_no` is now **scoped to the requesting user's company** (via a `branch` include `where: { company_code }`, `required: true`) so a user can only get/update/void/delete their **own** company's batch. Applied to: `updateJournalEntryBatch`, `voidBatch`, `deleteBatch` (`journalEntryBatch`/get was already scoped). The void status-update now targets `where: { id: batch.id }` (not `batch_no`) so it can never void another company's same-numbered batch.
+- The batch-number generator itself was **not** changed — it already numbers per company; it only needed the global unique constraint relaxed to per-company.
+
 ## Support Queries
 
 ```sql

@@ -79,3 +79,16 @@ Multiple Invoicing for a Service - Summary
   - GET /invoice/order/listAllServiceInvoices/:orderId - Lists invoices for document generation
 
   This architecture ensures data integrity while providing flexibility for corrections and maintaining a complete financial history.
+
+  Duplicate Document-Row Guard (auto-invoice generation)
+
+  - During auto-invoice generation (`service.controller.js`, ~line 2950), the system writes one
+    row into the `documents` table per invoice, all sharing the same `document_number`.
+  - Each invoice (`documents.document_id` = invoice id) must have exactly ONE invoice document row.
+  - Guard added: the creation loop now (1) de-duplicates by invoice id within the run, and
+    (2) skips any invoice that already has an invoice document row in `documents`. This prevents
+    a doubled list entry, a re-run, or a double-submit from creating a second identical document
+    row for the same invoice (which previously made one invoice appear twice in the order's
+    Documents tab — e.g. KHIN00000005 on order 2591).
+  - Note: the parallel XO/cost document loop (~line 3040) follows the same pattern and is a
+    candidate for the same guard if cost-document duplication is ever observed.
