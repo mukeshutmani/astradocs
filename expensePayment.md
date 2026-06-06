@@ -69,7 +69,7 @@ Multiple expense lines can be added via `+ Add Account` button.
 **Columns**: GL Account, Branch, Remarks, Debit, Credit, (delete)
 
 **Key behaviors**:
-- **GL Account**: Combobox filtered to `account_type === "E/Expenses"` and `type === "Detail"` (only detail-level expense accounts, not parent groups)
+- **GL Account**: Combobox filtered to `account_type === "E/Expenses"` and `type === "Detail" || type === "Details"` (detail-level expense accounts — both `"Detail"` and `"Details"` spellings — not parent/`Rollup` groups)
 - **Branch**: Auto-set to top-level branch; disabled when top Branch is chosen
 - **Debit** / **Credit**: Numeric inputs (default 0)
 - **Net Expense Amount** (auto-calculated):
@@ -278,7 +278,7 @@ The template has **three rendering branches** based on settlement type:
 | `payment_settlement_expenses` | Expense line rows (`coa_id`, `branch_id`, `remarks`, `debit`, `credit`) |
 | `payment_settlement_payments` | Form of payment entries (pay_type, currency, amount, bank, cheque, card, chart_of_account_id, etc.) |
 | `documents` | Document numbering registry (`document_number`, `document_type='payment'`, `payment_settlement_id`, `user_id`) |
-| `chart_of_accounts` | GL accounts — filtered to `account_type='E/Expenses'` + `type='Detail'` for dropdown |
+| `chart_of_accounts` | GL accounts — filtered to `account_type='E/Expenses'` + `type IN ('Detail','Details')` for dropdown |
 | `branches` | Branch list (used for `document_prefix`) |
 | `bank_accounts` | Lookup of `bank_id` from `chart_of_account_id` during payment save |
 | `posting_rules` | Defines EXPE / CASH rules per `prefix_code='{pref}PY'` |
