@@ -225,6 +225,8 @@ CR 245100 - Customer Deposit / Overpayment: 75,000
 - For other methods: `chart_of_account_id` is populated
 - Bank accounts have correct `chart_of_account_id` linked
 
+**Multiple accounts under one bank (fixed)**: When a single bank (e.g. Meezan Bank Limited) has several bank accounts, each account has its own `account_number` and its own `chart_of_account_id`. The Advanced Deposit bank dropdown (Cheque, Direct Deposit, Credit/Debit Card) now keys each option on the **bank account id** (`bank_accounts.id`), not the shared `bank_id`. Previously every account of the same bank carried the same value, so selecting any of them always resolved to the first account — saving the wrong `account_number` and posting to the wrong `chart_of_account_id`. The stored `bank_id` still holds the real bank id; the selected account drives `account_number` and `chart_of_account_id`.
+
 ### Issue 2: Entries Not Generating
 **Problem**: Customer deposits not creating journal entries
 **Solution**: Check that:

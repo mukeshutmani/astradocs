@@ -989,6 +989,27 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 - Only XO statuses `Printed / Partially Paid / Paid` are included.
 - Supplier with no opening XOs → empty section is skipped, `openingXoTotal = 0`.
 
+### 16.8 Ticket/Passenger Line Alignment in Ticket & Refund Ticket Sections (2026-06-08)
+
+**Problem**: When one XO had many tickets, the Ticket Bookings (and Refund Ticket Bookings) row crammed all ticket numbers into one cell and all passenger names into another, each comma-joined and wrapping independently. Ticket #1 didn't line up with passenger #1, and the tall cell overflowed the table header (broken layout).
+
+**Root cause**: ticket numbers and passenger names were built as two *separately* `.filter(Boolean)`-ed arrays and joined with `", "`. A passenger missing a ticket number shifted the two lists out of sync, and the comma-joined strings wrapped at different points.
+
+**Solution Implemented** (one real table row per ticket, internal horizontal borders removed so the group reads as one clean block — same look as the printed XO/Costing document):
+1. Build ticket/passenger from a single filtered `service_passengers` list so each ticket number stays paired with its own passenger (placeholder `-` when one side is missing).
+2. Per XO, keep the paired `ticketNos`/`passengers` arrays plus date/sector/class/amounts on the booking row through the existing date sort (so dates still sort one-row-per-XO).
+3. After the sorts, `expandPaxRows` flattens each XO row into **one row per ticket**: the first ticket row carries XO/date/sector/class/amounts; continuation rows carry only that ticket's number + passenger (other cells blank). Each row also gets `__cont` (is continuation) and `__lastInGroup` flags. Applied to `ticketBookings` and `refundTicketBookings` (supplier function only).
+4. Because each ticket number and its passenger physically share a table row, they can never drift out of alignment — even when a long name wraps.
+5. PDF (`supplier-account-statement.ejs`): `td` cells `vertical-align: top`; internal horizontal borders suppressed within a group via `border-top:none` when `__cont` and `border-bottom:none` when not `__lastInGroup`, so the per-ticket rows render as one continuous list rather than a boxed grid.
+6. **Header overlap fix**: `thead` changed from `table-header-group` (repeated per page) to `table-row-group` (rendered once), so the long ticket list crossing a page no longer collides with a repeated header.
+7. Section totals stay correct (amounts only on each XO's first row; continuation rows blank = 0). Excel shows the same per-ticket rows.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (supplier function) — ticket & refund-ticket build paired `ticketNos`/`passengers` arrays; `expandPaxRows` after the booking sorts.
+- `psback/views/pages/reports/supplier-account-statement.ejs` — `td` top-align + group border suppression (`__cont`/`__lastInGroup`); `thead` → `table-row-group`.
+
+**Scope**: Ticket Bookings + Refund Ticket Bookings, supplier function only; Hotel/General and the Customer Account Statement unchanged.
+
 ### 16.4 Summary of Changes
 
 **Before**:

@@ -24,6 +24,7 @@ The Customer Position Report provides a summary view of each customer's financia
 - Branch: isNotBlank, isBlank, isEqual, between
 - Customer: isNotBlank, isBlank, isEqual, between
 - Adjustment Date Mode: checkbox (Posted to Ledger)
+- Include Raised Invoices: checkbox (`includeRaised`, default OFF) — see [Include Raised Invoices](#include-raised-invoices-2026-06-08)
 
 **Output**: PDF or Excel
 
@@ -50,7 +51,9 @@ The Customer Position Report provides a summary view of each customer's financia
 
 ### Row Structure
 
-One row per customer with summary totals:
+One row per customer with summary totals. Customers with **no activity at all**
+(every money column is `0.00`) are **excluded** from the report — see
+[Hide Zero-Activity Customers](#hide-zero-activity-customers-2026-06-08).
 
 | Column | Key | Description |
 |--------|-----|-------------|
@@ -255,6 +258,34 @@ All currency exchange rate queries (deposits, historical deposits) also filter b
 ---
 
 ## Recent Updates
+
+### Include Raised Invoices (2026-06-08)
+
+**Goal**: Mirror the new Customer Account Statement option here (this report is the summary version). When enabled, un-printed **Raised** invoices are counted in the customer's totals.
+
+**Behaviour**:
+1. New checkbox **"Include Raised invoices"** (`includeRaised`, default **OFF**) on the filter screen. OFF = today's behaviour (only `Printed`, `Settled`, `Partially Settled`).
+2. When ON, `Raised` is added to the invoice status list, so Raised invoices flow into **ADD:Sales Invoice** and **Net Balance**, and (for Raised invoices dated before the period) into **Opening Balance B/F**, keeping reconciliation with the Customer Account Statement.
+3. No Status column is shown — this report is one summary row per customer, with no per-document listing.
+
+**Where**:
+- `psback/controllers/report.controller.js` → `getCustomerPositionReport`: `includeRaised` read from the request; applied to the period invoice status list (the raw-SQL `i.status IN (...)` clause); passed into the shared `getCustomerOpeningBalances` helper for the opening balance.
+- `psback/services/customerOpeningBalance.service.js`: `includeRaised` param (default **false**) — already shared with the Customer Account Statement.
+- `psfront/src/pages/Report/CustomerPositionReport.jsx`: checkbox added.
+
+**Caveat**: a Raised invoice has no frozen exchange rate (saved only at print time), so foreign-currency Raised invoices use the **live** rate. PKR invoices are unaffected.
+
+**Not changed**: the early-exit path used when a company has **zero ordered services** still lists all customers without raised invoices (rare scenario, left as-is). The dead historical-invoice query (kept from the 2026-05-19 opening-balance refactor) was left untouched since its result is not used in output.
+
+### Hide Zero-Activity Customers (2026-06-08)
+
+**Goal**: When the report is run without a customer filter, it listed **every** customer in the company — including ones with no invoices, receipts, deposits, or balance (all columns `0.00`). Those empty rows are now hidden.
+
+**Rule**: A customer row is removed only when **every** money column is `0.00` (opening balance, sales invoice, opening invoices, refunds, receipts, payments, JV debit, JV credit, net balance). A customer whose real activity nets to zero (e.g. invoice 1,000 and receipt 1,000) still has non-zero columns and **remains** in the report.
+
+**Where**: `psback/controllers/report.controller.js` → `getCustomerPositionReport`. After the per-customer rows (`data1`) are built and before the Grand Total is computed, `data1` is filtered to keep only rows with at least one non-zero money column. The Grand Total then sums only the visible rows.
+
+**Not changed**: The separate early-exit path used only when a company has **zero ordered services** still lists all customers (rare scenario, left as-is).
 
 ### Opening Balance — Shared with Customer Account Statement (2026-05-19)
 

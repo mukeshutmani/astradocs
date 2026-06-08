@@ -64,6 +64,7 @@ Banks are sorted by their most recent transaction date (newest first).
 | Account No. | `bank_account.account_number` | Bank account number |
 | Line No. | `journal_entry.id` | Journal entry ID (primary key) |
 | Reference | `journal_entry.description` + `journal_entry.analysis_code1` | Reference text; "undefined" removed, analysis_code1 appended if not already present |
+| Remarks | source document `remarks` | Remarks of the source document behind the entry, matched by `analysis_code1` (see [Remarks Column](#remarks-column-2026-06-08)) |
 | Cheque No. | `journal_entry.analysis_code5` | Cheque number |
 | DR Amount | `journal_entry.debit` | Debit amount (2 decimal places) |
 | CR Amount | `journal_entry.credit` | Credit amount (2 decimal places) |
@@ -198,6 +199,27 @@ Verified with batch TTJV000007 (3 entries across 2 banks):
 - Meezan Bank Net: DR 6,750, CR 0 ✓
 - Grand Total: DR 108,750, CR 0 ✓
 - All values verified correct against database. No bugs found.
+
+---
+
+## Recent Updates
+
+### Remarks Column (2026-06-08)
+
+**Goal**: Show a **Remarks** column (right after Reference) holding the remarks written on the source document behind each bank entry.
+
+**Why a lookup is needed**: `journal_entries` has no remarks field. The remark lives on the source document, which the entry references through `analysis_code1` (the document number).
+
+**How it works** (`getBankActivityReport` in `report.controller.js`):
+1. After loading the journal entries, the distinct document numbers from `analysis_code1` are collected (the trailing ` (Void)` marker is stripped first).
+2. Remarks are fetched in bulk from the source tables, **scoped to the current company** (join `users.company_code`) so identical document numbers in other companies cannot match:
+   - `DP` → `customer_deposits.receipt_number` → `remarks`
+   - `AP` → `supplier_deposits.payment_number` → `remarks`
+   - `PY` → `payment_settlements.payment_number` → `remarks` (multiple settlement rows per number; one is taken via `MAX`)
+3. A `remarks` cell is added to every entry row, plus empty placeholders on the bank header, per-bank total, and grand-total rows so columns line up.
+4. PDF and Excel both build columns dynamically from the row data, so both gain the column. The PDF template (`settlement.ejs`) got a `key === 'remarks'` style so long remarks **wrap** (scoped to the remarks key only; the reports that share this template are unaffected).
+
+**Not covered**: rare `OP` (overpayment) and `OJ` (opening) bank lines have no remarks-bearing source document, so their Remarks show blank.
 
 ---
 

@@ -63,6 +63,13 @@ The Customer Account Statement Report:
    - Affects: Deposits, Receipts, Credit Notes, Payment Settlements, and historical data
    - Displayed in header as "Adjustment Date: Posted to Ledger"
 
+5. **Include Raised Invoices** — NEW
+   - Checkbox: `includeRaised` (default OFF)
+   - When OFF (default): only `Printed`, `Settled`, `Partially Settled` invoices appear (unchanged behaviour)
+   - When ON: un-printed `Raised` invoices are also pulled in and counted in **Total Sales** and **Net Balance** (and in **Opening Balance B/F** for Raised invoices dated before the period, so reconciliation holds)
+   - Each booking row shows a **Status** column (after Invoice) with the document's actual status (Raised / Printed / Settled / Partially Settled), in both PDF and Excel
+   - Caveat: a Raised invoice has no frozen exchange rate (saved only at print time), so foreign-currency Raised invoices use the **live** rate. PKR invoices are unaffected.
+
 ### Request Body Structure
 ```javascript
 {
@@ -74,6 +81,7 @@ The Customer Account Statement Report:
   startDate: "YYYY-MM-DD",           // Required if dateFilter is not "blank"
   endDate: "YYYY-MM-DD",             // Required if dateFilter is "between"
   adjustmentDateMode: boolean,       // When true, use adjustment_date for posted docs
+  includeRaised: boolean,            // When true, also include un-printed "Raised" invoices
   type: "pdf" | "excel"              // Output format
 }
 ```
@@ -366,8 +374,8 @@ if (!inv.id || !processedInvoiceIds.has(inv.id)) {
 #### 1. **Ticket Bookings** (Flight/Air Services)
 Columns:
 - Date (invoice_date formatted as DD-MM-YYYY)
-- C/Xo (Currency Exchange - currently empty)
 - Invoice (invoice_number)
+- Status (invoice.status — Raised / Printed / Settled / Partially Settled)
 - Ticket No. (service_passenger.ticket_number)
 - Passenger (service_passenger.passenger_name)
 - Sector (flight routes from city codes, e.g., "ISB/DXB/JFK")
@@ -694,7 +702,12 @@ Orders can have multiple services. Each service generates its own invoice entry.
 - Receipts with `status = "Void"` are excluded
 
 ### 11.4 Invoice Status Filter
-Only invoices with status in ["Printed", "Settled", "Partially Settled"] are included
+By default only invoices with status in ["Printed", "Settled", "Partially Settled"] are included.
+When the **Include Raised Invoices** option (`includeRaised`) is ON, "Raised" is added to that list
+for both the period sections and the Opening Balance B/F (the shared helper receives `includeRaised`).
+The same status list is applied in the two invoice queries in the controller and in
+`customerOpeningBalance.service.js` (where `includeRaised` defaults to false, so the Customer
+Position Report, which does not pass the flag, is unaffected).
 
 ### 11.5 Deposit Calculation
 All deposits are shown with their FULL values converted to PKR
@@ -948,5 +961,5 @@ WHERE customer_deposit_id IN ({depositIds})
 
 ---
 
-**Last Updated**: March 2026 — Added Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
+**Last Updated**: June 2026 — Added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); earlier: Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
 
