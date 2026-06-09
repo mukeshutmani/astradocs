@@ -33,6 +33,7 @@ Timeout: 5 minutes (300000ms)
   startDate: "YYYY-MM-DD",      // Required unless dateFilter == "blank"
   endDate: "YYYY-MM-DD",        // Required if dateFilter == "between"
   adjustmentDateMode: boolean,   // true = use adjustment_date for posted docs
+  includeRaised: boolean,        // true = also include un-printed "Raised" XOs/costs
   type: "pdf" | "excel"         // Default: "pdf"
 }
 ```
@@ -96,7 +97,7 @@ IF foreignCurrency:
   totalAmount = ROUND(totalCost * exchangeRate)
 ```
 
-**Status filter**: Only `Paid`, `Partially Paid`, `Printed` (exclude Void, Raised)
+**Status filter**: Only `Paid`, `Partially Paid`, `Printed` (exclude Void, Raised). When the **Include Raised XOs** option (`includeRaised`) is ON, `Raised` is added to this list — see [Include Raised XOs](#104-include-raised-xos-2026-06-08).
 **Exclude**: costs where `total_costing <= 0`
 
 ### 3.2 Payment Calculation

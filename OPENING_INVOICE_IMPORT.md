@@ -109,15 +109,17 @@ This document covers **Invoice import only**. XO import will be covered in a sep
 
 ### Rule 9 — Duplicate Check
 
-1. Duplicate uniqueness is decided by **branch code + the 8-digit number**, ignoring the type prefix (`IN` / `OI` / `OX` / etc.).
-2. **Within the same Excel file** — if two rows produce the same final invoice number → validation error showing both row numbers and the invoice number highlighted in **red**: *"Duplicate invoice number `TTOI00000078` found in row 5 and row 12."*
-3. **Against existing DB** — if any existing invoice in the DB for the same branch has the same 8-digit number (regardless of type code), the import row fails: *"Invoice number `TTOI00000078` already exists in system for branch TT — row X."*
-4. Different branches with same 8-digit number → allowed (e.g., `TTOI00000078` and `KHIN00000078` co-exist).
+1. **Within the same Excel file** — duplicate is decided by **branch code + the 8-digit number**. If two rows produce the same number → validation error showing both row numbers and the invoice number highlighted in **red**: *"Duplicate invoice number `TTOI00000078` found in row 5 and row 12."*
+2. **Against existing DB** — the import row fails only if an existing **opening** invoice (`is_opening = 1`) **of the same company** and same branch has the same 8-digit number: *"Invoice number `TTOI00000078` already exists in system for branch TT — row X."*
+   1. **Company-scoped**: invoice numbers are unique per company, not globally. The check restricts to the active company's invoices via the invoice's `service.user_id`. The same number in a *different* company does **not** block the import.
+   2. **Type-aware (opening only)**: a new opening invoice (`OI`) clashes only with another **opening** invoice of the same branch + 8 digits. It does **not** clash with a normal invoice (`IN`) sharing those digits — e.g. `KHOI00000001` imports fine even when `KHIN00000001` already exists in the same company.
+3. Different branches with same 8-digit number → allowed (e.g., `TTOI00000078` and `KHIN00000078` co-exist).
 
 ### Rule 10 — Amount & Display
 
 1. `BILLINVAMT` is the **total gross amount** of the invoice (tax already included).
 2. No separate tax / FED / WHT columns are needed.
+3. `BILLINVAMT` may be **negative** — a negative opening invoice is a credit / advance balance (the company owes the customer). Only **blank** or **exactly 0** is rejected; positive and negative values are both accepted and stored as-is.
 3. Imported invoices behave **differently from normal invoices** in the UI:
    1. They do NOT have a full printable invoice document.
    2. When the user **clicks or hovers** on an opening invoice number anywhere in the system, an **overlay / dialog** appears.
@@ -204,7 +206,8 @@ This document covers **Invoice import only**. XO import will be covered in a sep
 | Duplicate vs DB | *"Invoice number `TTOI00000078` already exists in system for branch TT — row X."* |
 | EXRATE ≠ 1 for PKR | *"EXRATE must be 1 when BILLCURCODE = PKR — row X."* |
 | EXRATE blank/≤0 for foreign currency | *"EXRATE must be greater than 0 for foreign currency — row X."* |
-| `BILLINVAMT` blank or ≤ 0 | *"Invalid amount in row X."* |
+| `BILLINVAMT` blank | *"Invoice amount is required — row X."* |
+| `BILLINVAMT` exactly 0 | *"Invoice amount cannot be zero — row X."* (negative is allowed) |
 | `PAX1` blank | *"PAX1 is required — row X."* |
 | Mixed currencies in same file | *"Multiple currencies found in file — please split into one file per currency."* |
 | Any errors present | *"Please correct the errors first and re-upload. X rows have issues — see preview for details."* |

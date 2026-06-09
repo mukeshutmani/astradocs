@@ -99,6 +99,7 @@ Return Response with Download Link
   startDate: string | null,            // ISO date format
   endDate: string | null,              // ISO date format
   adjustmentDateMode: boolean,         // When true, use adjustment_date for posted docs
+  includeRaised: boolean,              // When true, also include un-printed "Raised" XOs/costs
   type: "pdf" | "excel"                // Output format
 }
 ```
@@ -1010,6 +1011,26 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 **Scope**: Ticket Bookings + Refund Ticket Bookings, supplier function only; Hotel/General and the Customer Account Statement unchanged.
 
+### 16.9 Include Raised XOs (2026-06-08)
+
+**Goal**: Mirror the new "Include Raised invoices" option from the Customer Account Statement / Position reports. For suppliers the driving document is the **XO / Cost** (not an invoice), so this includes XOs with status **`Raised`** (the default status of a newly created, not-yet-printed XO).
+
+**Behaviour**:
+1. New checkbox **"Include Raised XOs"** (`includeRaised`, default **OFF**) on the filter screen. OFF = today's behaviour (cost status `Printed / Settled / Partially Paid / Paid` only).
+2. When ON, `Raised` is added to the **cost** status list in both the main query and the historical (opening-balance) query. Raised XOs then appear in the booking tables and are counted in **Add Sale Invoices**, **Net Balance**, and (for pre-period Raised XOs) **Opening Balance B/F** — keeping reconciliation intact.
+3. A new **Status** column is shown (after the XO column) on **Ticket**, **Hotel**, and **General** bookings, displaying each XO's status (Raised / Printed / Partially Paid / Paid), in both PDF and Excel. On the per-ticket expanded rows the status shows on the XO's first row only (continuation rows are blank, consistent with the section-16.8 layout).
+
+**What was NOT changed**:
+- The invoice-status filter and the payment-settlement `Printed` filter (those are not about XO status).
+- Refund Ticket / Refund General / Opening XO / Voucher / Advance Payment / JV sections (no Status column added there).
+
+**Caveat**: a Raised XO may not have a frozen exchange rate yet (saved at print time), so a foreign-currency Raised XO uses the **live** rate. PKR XOs are unaffected.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`): `includeRaised` read from request; shared `costStatuses` list applied to the main + historical cost queries; `status` threaded into the per-XO ticket/hotel/general map entries and booking rows; `'status'` added to the three Excel section column arrays.
+- `psback/views/pages/reports/supplier-account-statement.ejs`: `'status'` added to the Ticket/Hotel/General `renderTable` column arrays (dynamic table — header, alignment, and totals colspan auto-adjust).
+- `psfront/src/pages/Report/SupplierAccountStatement.jsx`: "Include Raised XOs" checkbox added.
+
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -1046,5 +1067,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-05-19 — Section 16.7 (Opening XO section added after Refund Ticket Bookings, with "Add Opening XO" summary line)
+**Last Updated**: 2026-06-08 — Section 16.9 (Include Raised XOs option + Status column on Ticket/Hotel/General bookings)
 
