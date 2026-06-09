@@ -63,6 +63,13 @@ The Customer Account Statement Report:
    - Affects: Deposits, Receipts, Credit Notes, Payment Settlements, and historical data
    - Displayed in header as "Adjustment Date: Posted to Ledger"
 
+6. **Hide Column** — NEW (2026-06-09)
+   - Single multi-select dropdown labelled **Hide Column** (`hideColumns` array)
+   - Options: **Discount, Rebate, T.Fee, SST** (internal keys: `discount`, `rebate`, `transactionFee`, `sst`)
+   - The user can tick one or more; those columns are **hidden** from the Ticket Booking and Refund Ticket Booking tables (PDF + Excel). Nothing selected = report unchanged.
+   - **Display-only**: hiding a column does NOT change the per-row **Net** or any total — the hidden amounts are still included in the math (Net is precomputed and the section totals sum `Net`). The "Total" row colspan shrinks by the number of hidden columns so the table stays aligned.
+   - UI: the trigger is an **auto-width** dropdown button (`w-auto`, `min-w-[160px]`, `max-w-full`) that grows with the number of selected labels and stays within the card; built with `DropdownMenuCheckboxItem` (menu stays open on toggle via `onSelect` preventDefault).
+
 5. **Include Raised Invoices** — NEW
    - Checkbox: `includeRaised` (default OFF)
    - When OFF (default): only `Printed`, `Settled`, `Partially Settled` invoices appear (unchanged behaviour)
@@ -82,6 +89,7 @@ The Customer Account Statement Report:
   endDate: "YYYY-MM-DD",             // Required if dateFilter is "between"
   adjustmentDateMode: boolean,       // When true, use adjustment_date for posted docs
   includeRaised: boolean,            // When true, also include un-printed "Raised" invoices
+  hideColumns: string[],             // Columns to hide on Ticket tables: any of 'discount','rebate','transactionFee','sst' (display only)
   type: "pdf" | "excel"              // Output format
 }
 ```
@@ -391,6 +399,11 @@ Columns:
 
 Each passenger creates a row. The supplementary fee, transaction fee, and SST are per-invoice
 totals, so each is divided by the number of passengers for the per-passenger row values.
+
+> **Hide Column (2026-06-09)**: The **Discount, Rebate, T.Fee, and SST** columns can be hidden
+> via the **Hide Column** filter (`hideColumns`). Hiding is display-only — the values remain in
+> the **Net** and in all totals. Applies to both this table and the Refund Ticket Booking table,
+> in PDF and Excel.
 
 #### 2. **Hotel Bookings**
 Columns:

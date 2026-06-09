@@ -67,10 +67,33 @@ calculations are unchanged — only which columns are shown and how some are mer
 
 The **TOTAL** row and the **Excel** export mirror this exact layout.
 
-**Unchanged:** the bottom **Summary breakdown table** still lists each individual
+**Summary breakdown table (DSR-specific):** the bottom table lists each individual
 service category (Air, Visa, Hotel, Insurance, Car Rental, Cruise, Tour, Train, Hajj,
-Umrah, Miscellaneous) with its own SST and Profit/Loss columns, and the footer
-`Total Sales − Total Cost − Total SST = TOTAL PROFIT/LOSS` line is unchanged.
+Umrah, Miscellaneous) with **Total Sales, Total Cost, and Profit/Loss** columns. The
+**SST column has been removed** from this table (2026-06-09). Profit/Loss is still
+calculated as `Sales − Cost − SST` internally, so the hidden SST is the reason
+`Sales − Cost` does not visually equal Profit/Loss. The grand Profit/Loss appears in
+this table's own **Total** row.
+
+The bottom block (the `Total Sales − Total Cost − Total SST = TOTAL PROFIT/LOSS`
+formula line and the standalone **TOTAL PROFIT/LOSS** figure) has been **removed**
+(2026-06-09) from both the PDF (`dsr-report.ejs`, the `.total-gross` div) and the
+Excel builder in `dsr.report.controller.js`.
+
+The summary table uses `page-break-inside: avoid` so it is never split across two PDF
+pages — it stays together on a single page.
+
+### Heading date label (DSR-specific)
+
+The report heading reflects the **chosen date operator** instead of always printing a
+`From … To …` range (2026-06-09). Built in `dsr.report.controller.js` (`header.dateRange`):
+- `between` → `From <start> To <end>`
+- `=` → `Date: <date>`
+- `>=` → `From <date>`, `>` → `After <date>`, `<=` → `Up To <date>`, `<` → `Before <date>`, `<>` → `Not <date>`
+- `isBlank` / `isNotBlank` / no date → empty heading
+
+Previously the heading was hardcoded to `From <start> To <end>` with `end` defaulting to
+today, so an `=` filter wrongly showed a range up to the current date.
 
 Implemented in `psback/views/pages/reports/dsr-report.ejs` (PDF) and the Excel builder
 inside `psback/controllers/reports/dsr.report.controller.js`. The Daily Sale Report
@@ -80,8 +103,11 @@ template/controller are untouched.
 
 Because the condensed 20-column layout leaves free space on the landscape page, DSR uses
 larger fonts than Daily Sale Report for easier reading:
-- Main table cells/headers `10px` (vs `8px`), body `11px`, report title `18px`, summary table `11px`.
-- Slightly larger cell padding; Client/PNR/Pax text columns widened.
+- Main table text cells/headers `10px` (vs `8px`); **number/amount cells (`.amount`) `12px`**
+  (2026-06-09) so values read clearly; body `11px`, report title `18px`, summary table `11px`.
+- Cell padding tightened to `2px 3px` (2026-06-09) to free horizontal space so the larger
+  `12px` numbers still fit on one landscape page without triggering auto-shrink.
+- Client/PNR/Pax text columns widened.
 - PDF rendered at `zoom: 1.0` (Daily Sale Report uses `0.75`); smart shrinking stays on as a
   safety net so a wide row auto-fits the landscape width instead of clipping.
 - The bottom **TOTAL PROFIT/LOSS** block is left-aligned (`.total-gross { text-align: left }`)
