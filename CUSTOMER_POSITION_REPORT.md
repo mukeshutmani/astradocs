@@ -259,6 +259,14 @@ All currency exchange rate queries (deposits, historical deposits) also filter b
 
 ## Recent Updates
 
+### Single-Date Heading (2026-06-10)
+
+**Goal**: When the report is run for a single day (From = To, e.g. the `=` operator or a between with the same date twice), the PDF heading showed "Document Date: 2026-06-01 To 2026-06-01". It now shows just "Document Date: 2026-06-01". A real range still shows "2026-06-01 To 2026-06-05".
+
+**Where**: `psback/controllers/report.controller.js` → `getCustomerPositionReport`, the `header.documentDate` line — if `startMoment` and `endMoment` are the same day, only the single date is printed.
+
+**Not changed**: the "Document Date:" label itself (it lives in the shared `report2.ejs` template used by 7 reports) and the Excel output (which does not print the document date in its header).
+
 ### Include Raised Invoices (2026-06-08)
 
 **Goal**: Mirror the new Customer Account Statement option here (this report is the summary version). When enabled, un-printed **Raised** invoices are counted in the customer's totals.
