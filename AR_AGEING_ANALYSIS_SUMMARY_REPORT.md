@@ -145,6 +145,10 @@ The Summary Report totals must match the Detail Report:
 
 ## Version History
 
+### Version 1.6 (2026-06-11)
+
+- **Branch "Is Not Blank" no longer restricts** — The default filter value used to add `branch_id != null` to the customer query, silently excluding customers with no branch (parity fix with Detail report v1.10, discovered via invoice HOIN00000005 / customer CUS004 / company 1004). Now "Is Not Blank" applies no condition in `getARAgeingAnalysisSummaryReport`; "Is Blank" / "Is Equal" / "Between" are unchanged. The Summary report has no Sales ID filter, so Branch was the only change.
+
 ### Version 1.5 (2026-05-15)
 
 Brings the Summary controller into parity with the Detail report v1.9 for Manual JE settlements.
