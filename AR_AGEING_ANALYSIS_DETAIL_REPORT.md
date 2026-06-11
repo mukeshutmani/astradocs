@@ -1,9 +1,9 @@
 # AR Ageing Analysis Detail Report - Technical Documentation
 
-**Version**: 1.9
-**Date**: 2026-05-15
+**Version**: 1.10
+**Date**: 2026-06-11
 **Author**: System Analysis
-**Status**: Stable — Manual JE settlement now subtracted from outstanding in v1.9; Excel freeze pane fixed in v1.8; multi-currency aggregation fixed in v1.7
+**Status**: Stable — Branch/Sales ID "Is Not Blank" no longer restricts (v1.10); Manual JE settlement subtracted from outstanding in v1.9; Excel freeze pane fixed in v1.8
 
 ---
 
@@ -272,6 +272,8 @@ Currency conversion errors are caught and logged - the unconverted amount is use
 | Branch | Select | Combobox (client-side, up to 1000) | Is Not Blank, Is Blank, Is Equal, Between | Is Not Blank |
 | Sales ID | Select | Combobox (client-side, full list) | Is Not Blank, Is Blank, Is Equal, Between | Is Not Blank |
 
+> **Note (v1.10)**: For **Branch** and **Sales ID**, the default "Is Not Blank" applies **no restriction** on the backend — customers with a blank branch or no salesperson are still included. Previously it required the field to be filled in, which silently hid branchless customers (e.g. CUS004/HOIN00000005 in company 1004). "Is Blank", "Is Equal", and "Between" behave as before.
+
 ### Filter Input Details
 
 - **Customer Number**: When `isEqual` → single LiveComboBox. When `between` → two LiveComboBoxes (Start/End).
@@ -445,6 +447,10 @@ Minor confusion for users comparing PDF and Excel outputs.
 14. **PDF Template Foreign Currency Label** - Replaced hardcoded `invoice.currency === '145'` (USD-only) with `invoice.original_currency` check. Now labels all foreign currencies (USD, SAR, AED, CNY, etc.).
 15. **N+1 Query Elimination** - Replaced per-customer queries (3 queries × N customers) with 3 batch queries using `Op.in` for all customer IDs. Results grouped by `customer_id` in JavaScript. Reduces database round-trips from ~1500 to 3 for 500 customers.
 16. **API Timeout Increase** - Backend report route timeout increased from 30s to 5 minutes. Frontend axios timeout for report APIs increased to 5 minutes. Prevents `ERR_EMPTY_RESPONSE` on large datasets.
+
+### Completed Fixes (Version 1.10) — 2026-06-11
+
+20. **Branch & Sales ID "Is Not Blank" no longer restricts** — The default filter value "Is Not Blank" used to add `branch_id != null` / `sale_id != null` to the customer query, silently excluding customers with no branch or no salesperson (discovered via invoice HOIN00000005, customer CUS004, company 1004 — the customer has no branch, so the invoice never appeared under default filters). Now "Is Not Blank" applies no condition for Branch and Sales ID in `getARAgeingAnalysisDetailReport`, so a user can leave all filters at default, pick a customer and as-of date, and generate. "Is Blank" / "Is Equal" / "Between" are unchanged. Scope: AR Ageing **Detail** report only — the Summary report (and other reports using the same `isNotBlank` pattern) were intentionally not touched.
 
 ### Completed Fixes (Version 1.9) — 2026-05-15
 

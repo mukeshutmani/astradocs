@@ -1,9 +1,9 @@
 # AR Ageing Analysis Summary Report - Technical Documentation
 
-**Version**: 1.5
-**Date**: 2026-05-15
+**Version**: 1.6
+**Date**: 2026-06-11
 **Author**: System Analysis
-**Status**: Stable — Manual JE settlement now subtracted from outstanding (v1.5); PDF/Excel parity (v1.4), Detail/Summary parity (v1.3)
+**Status**: Stable — Branch "Is Not Blank" no longer restricts (v1.6); Manual JE settlement subtracted from outstanding (v1.5); PDF/Excel parity (v1.4), Detail/Summary parity (v1.3)
 
 ---
 
@@ -24,6 +24,8 @@ The AR Ageing Analysis Summary Report provides a condensed view of accounts rece
 - As Of Date: Single DateInput (default: today)
 - Invoice Date: isNotBlank, isBlank, =, <, <=, >, >=, <>, between (DateInput)
 - Branch: isNotBlank, isBlank, isEqual, between (Combobox, client-side)
+
+> **Note (v1.6)**: For **Branch**, the default "Is Not Blank" applies **no restriction** on the backend — customers with no branch assigned are still included (parity with Detail report v1.10). "Is Blank", "Is Equal", and "Between" behave as before.
 
 **Output**: PDF or Excel via dropdown button.
 

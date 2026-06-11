@@ -87,10 +87,13 @@ Rows are broken down **per branch** and grouped by key account. Rollup (parent) 
 2. Otherwise every account that appears in the chart of accounts is shown.
 
 ### 6. Rollup Accounts
-1. Rollup accounts (`type` starts with `roll`) that have no direct entries but whose children do appear are added automatically.
-2. The rollup's prefix is derived by stripping trailing zeros from its `key_account`.
-3. Any detail row whose `key_account` starts with that prefix is treated as a child.
-4. The rollup row sums Opening, Activities, and Closing values of its children.
+1. Rollup accounts (`type` starts with `roll`, covering `Rollup` and `Roll-Up`) that have no direct entries but whose children do appear are added automatically.
+2. A rollup's children are determined by **code range**: every row whose `key_account` is greater than the rollup's code and less than the next rollup of the same or higher level (by `level` column).
+   - Example: `Banks (180000, L3)` ends at `Trust Accounts (182000, L3)`, so only `181xxx` accounts roll into Banks; `Cash (185000, L3)` ends at `Liabilities (200000, L1)`, so it gets `185001`/`185002`.
+   - Previous prefix-based logic (strip trailing zeros, match by `startsWith`) was replaced because `180000 → "18"` also matched the `185xxx` Cash accounts, double-counting them under Banks.
+3. The rollup row **nets** its children per section (Opening, Activities, Closing): net = Σ(child debit − child credit), shown in the Debit column if positive or the Credit column if negative — the same one-side rule detail rows use.
+   - Example: Banks opening = 10,007,850 (Habib + MCB debits) − 48,514 (Meezan credit) = 9,959,336.00 Debit, credit cell empty.
+   - Consequence: a parent's Debit cell is not the straight sum of its children's Debit cells when children sit on opposite sides; it is the group's true net position.
 
 ### 7. Branch Handling
 1. Entries with no branch are grouped under a `NO_BRANCH` key with code `N/A` and name `No Branch`.
