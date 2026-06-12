@@ -1031,6 +1031,26 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 - `psback/views/pages/reports/supplier-account-statement.ejs`: `'status'` added to the Ticket/Hotel/General `renderTable` column arrays (dynamic table — header, alignment, and totals colspan auto-adjust).
 - `psfront/src/pages/Report/SupplierAccountStatement.jsx`: "Include Raised XOs" checkbox added.
 
+### 16.10 Full Ticket Number with Airline Prefix (2026-06-12)
+
+**Problem**: Ticket numbers in the Ticket Bookings and Refund Ticket Bookings sections showed only the 10-digit serial (e.g. `0000200211`) instead of the full 13-digit number shown on the XO/Costing document (e.g. `084-0000200211`). The first 3 digits looked "missing".
+
+**Root cause**:
+1. `service_passengers.ticket_number` stores only the 10-digit serial — the 3-digit airline prefix is not part of the column.
+2. The prefix lives on the airline record (`airline_codes.airline_ticket_prefix`), linked via `service_flights.airline_code`.
+3. The XO document and Invoice PDFs join the two at display time (`costDocument.ejs:834`, `invoiceDocument.ejs:1549`); the Supplier Account Statement printed the raw column only.
+
+**Solution Implemented** (parity with the XO document display):
+1. Added `{ model: db.airline_code, required: false }` to the `service_flight` include in the report's main supplier query.
+2. Ticket Bookings build: ticket numbers now render as `${airline_ticket_prefix}-${ticket_number}` using the first flight segment's airline (same source as the XO document). If the airline has no prefix saved, the plain ticket number is shown.
+3. Refund Ticket Bookings build: same change.
+4. Placeholder `-` rows (passenger with no ticket number) are not prefixed.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`): `airline_code` added to the `service_flight` include; `ticketPrefix` / `refundTicketPrefix` applied in the ticket and refund-ticket `ticketNos` mapping.
+
+**Scope**: PDF and Excel both inherit the change automatically (they render the same `ticketNos` arrays). Opening-balance math is unaffected (display-only change). The Customer Account Statement is unchanged (it shows the prefix in its separate "Airline" column).
+
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -1067,5 +1087,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-06-08 — Section 16.9 (Include Raised XOs option + Status column on Ticket/Hotel/General bookings)
+**Last Updated**: 2026-06-12 — Section 16.10 (Full ticket number with airline prefix, matching XO document display)
 

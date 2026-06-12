@@ -261,13 +261,9 @@ Each supplier shows:
 - Individual line items (XOs, debit notes, deposits)
 - **Supplier Total PKR**: Single total row per supplier — sum of days overdue in the Days Overdue column plus sums of all aging buckets and Total Outstanding. (The duplicate "Total in PKR" row was removed in v1.2.)
 
-### Summary Section (end of report, v1.2)
+### Grand Total (end of report, v1.2)
 
-After the last supplier, both PDF and Excel show (separated from the supplier sections by a blank spacer row):
-- **SUMMARY - ALL SUPPLIERS** header
-- One line per supplier: `Name (supp_no)` + sums of the 7 amount columns (Current … 121+ Days, Total Outstanding)
-- **Grand Total** row: column-wise sums across all suppliers (Excel: dark fill, white bold text)
-- Suppliers with no data rows are excluded from the summary
+After the last supplier, both PDF and Excel show a single **Grand Total** row (separated from the supplier sections by a blank spacer row): column-wise sums of the 7 amount columns (Current … 121+ Days, Total Outstanding) across all suppliers. Excel renders it with a dark fill and white bold text. Suppliers with no data rows contribute nothing. (A per-supplier summary table was briefly added in v1.2 and removed per client requirement — only the Grand Total row remains.)
 
 ---
 
@@ -287,7 +283,7 @@ After the last supplier, both PDF and Excel show (separated from the supplier se
   2. **Column header row** — bold, light-gray fill, bordered. Amount columns right-aligned.
   3. **Data rows** — one per XO/Debit Note/Advance Payment, amounts locale-formatted with 2 decimals.
   4. **"Supplier Total PKR:" row** — label spans cols A..E, sum of `days_overdue` in col F, sums in cols G..M. (Single total row since v1.2; the duplicate "Total in PKR" row was removed.)
-- **Summary block** (end of sheet, v1.2): `SUMMARY - ALL SUPPLIERS` header merged A..M (gray, bold), one row per supplier (`Name (supp_no)` merged A..E, sums in G..M), then a `Grand Total` row (dark `#333333` fill, white bold text, column-wise sums in G..M).
+- **Grand Total row** (end of sheet, v1.2): label merged A..E, dark `#333333` fill, white bold text, column-wise sums in G..M across all suppliers.
 - **Features**: Frozen header rows (first 7), supplier grouping, auto-sized columns, thin borders, formatted amounts.
 
 ---
@@ -300,8 +296,8 @@ After the last supplier, both PDF and Excel show (separated from the supplier se
 
 **Change**:
 1. Removed the "Total in PKR" row from both PDF and Excel — "Supplier Total PKR:" (which also carries the days-overdue sum) is now the single per-supplier total row.
-2. Added an end-of-report **SUMMARY - ALL SUPPLIERS** section to both outputs: one line per supplier with its 7 amount-column totals, followed by a **Grand Total** row summing all suppliers column-wise.
-3. Suppliers with no data rows are excluded from the summary.
+2. Added an end-of-report **Grand Total** row to both outputs, summing all suppliers column-wise, separated from the supplier sections by a blank spacer row. (A per-supplier summary table was initially added here, then removed per client requirement.)
+3. Suppliers with no data rows contribute nothing to the grand total.
 
 **Files Changed**:
 - `psback/views/pages/reports/ap_ageing_analysis.ejs` — removed duplicate total row; added summary + grand total block after the supplier loop
