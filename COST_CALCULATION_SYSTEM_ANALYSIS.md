@@ -78,6 +78,8 @@ Handles all price-side calculations:
 10. total_sales = round2(convertToBaseCurrency(subtotal_local, exchange_rate))
 ```
 
+**Discount amount → percent precision (2026-06-12)**: when the user types a discount *amount*, `calculateDiscountPercent` derives the percent at **6-decimal precision** (was 2). The percent remains the stored source of truth (re-derivation in step 3 above), but at 6 decimals the recomputed amount lands back on the exact figure the user typed (e.g. typing 62,961 keeps 62,961.00 instead of snapping to 62,967.07). Matches the `invoices.discount decimal(10,6)` column. Display still shows the percent rounded to 2 decimals. Rebate (`calculateRebatePercent`) intentionally unchanged.
+
 ### 2.2 Component Structure
 
 #### Main Components

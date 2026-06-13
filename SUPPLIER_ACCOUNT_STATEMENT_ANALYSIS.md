@@ -1051,6 +1051,8 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 **Scope**: PDF and Excel both inherit the change automatically (they render the same `ticketNos` arrays). Opening-balance math is unaffected (display-only change). The Customer Account Statement is unchanged (it shows the prefix in its separate "Airline" column).
 
+**Follow-up (same date)**: passenger/pax column font size in the PDF template raised from 7px to 10px so it matches the ticket number column (`supplier-account-statement.ejs`, `isSmallFont` style in `renderTable`).
+
 ### 16.4 Summary of Changes
 
 **Before**:
