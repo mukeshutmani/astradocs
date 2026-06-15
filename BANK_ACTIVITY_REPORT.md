@@ -21,7 +21,7 @@ The Bank Activity Report shows all journal entry transactions associated with ba
 
 **Filters**:
 - Date Range: =, <, <=, >, >=, <>, between (on `transaction_date`)
-- Banks: isNotBlank, isBlank, isEqual, between (company-wise bank list; filters on the account's `bank_id`)
+- Banks: isNotBlank, isBlank, isEqual, between (company-wise GL-account list shown as `key_account / description`; filters on `bank_account.id`)
 - Branch: isNotBlank, isBlank, isEqual
 - JE Period: isNotBlank, isBlank, isEqual
 
@@ -50,7 +50,9 @@ Entries are grouped by bank name. Each bank group contains:
 1. **Bank Header Row**: Bank name in Batch No. column, account number in Account No. column
 2. **Entry Rows**: One row per journal entry, sorted by date descending within each bank
 3. **Net Total Row**: Per-bank DR and CR totals with label "Net for [Bank Name]"
-4. **Grand Total Row**: Overall DR and CR totals across all banks
+4. **Net Ledger Balance Row**: Per-bank DR − CR balance with label "Net Ledger Balance"; value shown in the DR Amount column (CR Amount left blank)
+5. **Grand Total Row**: Overall DR and CR totals across all banks
+6. **Grand Net Ledger Balance Row**: Overall DR − CR balance across all banks, shown in the DR Amount column
 
 Banks are sorted by their most recent transaction date (newest first).
 
@@ -78,6 +80,7 @@ Banks are sorted by their most recent transaction date (newest first).
 ```
 totalDr = sum(entry.debit) for all entries in the bank group
 totalCr = sum(entry.credit) for all entries in the bank group
+netLedgerBalance = totalDr - totalCr   // shown in the "Net Ledger Balance" row
 ```
 
 ### Grand Totals
@@ -85,6 +88,7 @@ totalCr = sum(entry.credit) for all entries in the bank group
 ```
 grandTotalDr = sum(totalDr) across all bank groups
 grandTotalCr = sum(totalCr) across all bank groups
+grandNetLedgerBalance = grandTotalDr - grandTotalCr   // shown in the "Grand Net Ledger Balance" row
 ```
 
 ### Bank Display Name Priority
@@ -155,11 +159,11 @@ Applied on `journal_entry.transaction_date`:
 - Other operators: direct comparison
 
 ### Banks Filter
-Applied on `bank_account.bank_id` (so a selected bank matches every account of that bank):
-- `isEqual`: specific bank
-- `between`: range of bank IDs (auto-swaps if start > end)
+Applied on `bank_account.id` (so a selection narrows to one specific GL account):
+- `isEqual`: specific GL account
+- `between`: range of bank-account IDs (auto-swaps if start > end)
 
-The dropdown is built **company-wise** on the frontend from the already company-scoped bank accounts (`getBankAccountsApi`), de-duplicated by the account's parent `bank`. No new endpoint is used. Manually-typed banks (accounts with `bank_id = NULL`) do not appear as selectable banks; they still show under the default "Is Not Blank" (all) view. The request still uses the `bankAccountFilter` / `bank_account_id` / `bank_account_idStart` / `bank_account_idEnd` fields, which now carry **bank** ids.
+The dropdown is built **company-wise** on the frontend from the already company-scoped bank accounts (`getBankAccountsApi`). Each option is shown by its **GL account** as `key_account / description` (e.g. `181020 / MEEZAN BANK E-SAFAR`), the same label as the Bank Accounts page; the option value is the `bank_account.id`. No new endpoint is used. The request uses the `bankAccountFilter` / `bank_account_id` / `bank_account_idStart` / `bank_account_idEnd` fields, which carry **bank-account** ids. The on-report filter caption also shows the GL account label.
 
 ### Branch Filter
 Applied on `branch.id`.
@@ -205,6 +209,35 @@ Verified with batch TTJV000007 (3 entries across 2 banks):
 ---
 
 ## Recent Updates
+
+### Banks filter now lists GL accounts (2026-06-15)
+
+**Goal**: Show each Banks-filter option by its **GL account** (`key_account / description`, e.g. `181020 / MEEZAN BANK E-SAFAR`) and filter the report to that single GL account. This supersedes the earlier same-day "whole-bank" filtering.
+
+**Changes**:
+1. Frontend `BankActivityReport.jsx`: the dropdown is built directly from the company's bank accounts; each option's label is its GL account and its value is the `bank_account.id`. All three pickers (Is Equal, Between start/end) use this list.
+2. Backend `getBankActivityReport`: the filter now matches `bank_account.id` (isEqual / between) instead of `bank_account.bank_id`.
+3. Backend filter caption: the "Banks" / "Banks Range" label now reads the GL account (`bank_account → chart_of_account`) instead of the bank name.
+
+### "Net Ledger Balance" row added per bank (2026-06-15)
+
+**Goal**: Under each bank's "Net for [Bank]" totals, show one more row giving that bank's **DR − CR balance**.
+
+**Changes**:
+1. Controller `getBankActivityReport` now pushes a second row (`isBankBalance: true`) right after each bank's "Net for" total row, labelled **"Net Ledger Balance"**, with `totalDr - totalCr` placed in the **DR Amount** column (CR Amount blank).
+2. PDF template `settlement.ejs` gained an `isBankBalance` branch that renders this row in bold (same style as the total row); the blank spacer that separates banks was moved to follow this new row.
+3. Excel needs no change — its writer loops over all rows, so the new row appears automatically.
+
+**Note**: A negative balance (more credit than debit) displays as a negative number, e.g. `-6,750.00`.
+
+### "Grand Net Ledger Balance" row added (2026-06-15)
+
+**Goal**: After the Grand Total row, show one more row giving the overall **DR − CR balance** across all banks.
+
+**Changes**:
+1. Controller `getBankActivityReport` builds a `data1GrandBalance` object (`reference` = "Grand Net Ledger Balance", `dr_amount` = `grandTotalDr - grandTotalCr`, `cr_amount` blank) and passes it to both the Excel writer and the PDF render.
+2. PDF template `settlement.ejs` renders `data1GrandBalance` (bold) right after the Grand Total row, guarded by `typeof data1GrandBalance !== 'undefined'` so other reports sharing the template are unaffected.
+3. Excel writer adds the same row right after the grand total row.
 
 ### "Bank Account" filter renamed to "Banks" (2026-06-15)
 
