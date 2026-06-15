@@ -42,6 +42,15 @@ row dynamically** (the row containing `Key Account` and `Account Type`).
     *"Account Type is required"*.
 4. **Debit = Credit** — total Opening Debit must equal total Opening Credit across **Detail rows**
    (the trial balance). Rollups are sums and are not added to this total.
+   - This rule is **optional via a checkbox** in the upload area: *"Allow unbalanced import
+     (Debit ≠ Credit)"* (default **off**). When **off**, an unbalanced file is **blocked** (file
+     error) as before. When **on**, an unbalanced file is **allowed** and only raises a
+     non-blocking **warning** (*"GL import is unbalanced — Total Opening Debit (X) does not equal
+     Total Opening Credit (Y)."*); the Opening JE is posted as-is (its debit/credit will not match).
+   - The flag is sent as a multipart field `allowUnbalanced=true` on `/gl-import/preview` and
+     `/gl-import/confirm`; the validator moves the imbalance from `fileErrors` to `warnings`.
+   - All other checks (account exists, one branch, one period, rollup = Σ details, Trade
+     Debtors/Creditors reconciliation, date↔period) remain **mandatory** regardless of the checkbox.
 5. **Rollup = Σ details** — each Rollup account's net opening must equal the sum of the net
    openings of its Detail descendants (walked via the chart-of-accounts parent chain,
    `account_number`). Multi-level supported.

@@ -22,7 +22,7 @@ feature (`docs/OPENING_INVOICE_IMPORT.md`) — same flow, same rules — but for
 | `XO DATE` | Date | Yes | XO date — format `DD-MM-YYYY` |
 | `BILLCURCODE` | Text | Yes | Currency code (`PKR`, `USD`, …) |
 | `EXRATE` | Number | Yes | Exchange rate (`1` for PKR) |
-| `XO AMOUNT` | Number | Yes | Total XO amount (gross, in `BILLCURCODE`) |
+| `XO AMOUNT` | Number | Yes | Total XO amount (gross, in `BILLCURCODE`). May be negative (supplier credit); only zero is rejected |
 | `REMARKS` | Text | No | Optional notes — saved as-is |
 
 Accepted formats: `.xlsx` (priority), `.xls`. CSV not supported.
@@ -45,8 +45,11 @@ Accepted formats: `.xlsx` (priority), `.xls`. CSV not supported.
    `XO AMOUNT × EXRATE`.
 7. **`is_opening` flag** on `costs` identifies imported XOs.
 8. **Date format** `DD-MM-YYYY`; invalid format/date → validation error.
-9. **Duplicate check** — branch + 8-digit number, across existing `documents` (costing) and
-   `costs.xo_number`. Duplicate inside the file or vs the DB → validation error.
+9. **Duplicate check** — branch + 8-digit number. Scoped the same way as the Invoice import:
+   only **other opening XOs of the same company** count (`costs.is_opening = 1`, company via
+   `service.user_id`). A new `TTOX…` does **not** clash with a normal XO of the same branch +
+   8 digits, nor with another company sharing the branch prefix. Duplicate inside the file or
+   vs a prior opening XO → validation error.
 10. **Import batch** — every upload creates an `import_batches` row (`batch_type = 'XO'`),
     shown in the Import History tab with delete (blocked if any XO has a payment/settlement).
 11. **Preview-then-import** — upload → green/red preview → all-or-nothing confirm.

@@ -21,7 +21,7 @@ The Bank Activity Report shows all journal entry transactions associated with ba
 
 **Filters**:
 - Date Range: =, <, <=, >, >=, <>, between (on `transaction_date`)
-- Bank Account: isNotBlank, isBlank, isEqual, between
+- Banks: isNotBlank, isBlank, isEqual, between (company-wise bank list; filters on the account's `bank_id`)
 - Branch: isNotBlank, isBlank, isEqual
 - JE Period: isNotBlank, isBlank, isEqual
 
@@ -154,10 +154,12 @@ Applied on `journal_entry.transaction_date`:
 - `between`: uses start and end dates
 - Other operators: direct comparison
 
-### Bank Account Filter
-Applied on `bank_account.id`:
-- `isEqual`: specific bank account
-- `between`: range of bank account IDs (auto-swaps if start > end)
+### Banks Filter
+Applied on `bank_account.bank_id` (so a selected bank matches every account of that bank):
+- `isEqual`: specific bank
+- `between`: range of bank IDs (auto-swaps if start > end)
+
+The dropdown is built **company-wise** on the frontend from the already company-scoped bank accounts (`getBankAccountsApi`), de-duplicated by the account's parent `bank`. No new endpoint is used. Manually-typed banks (accounts with `bank_id = NULL`) do not appear as selectable banks; they still show under the default "Is Not Blank" (all) view. The request still uses the `bankAccountFilter` / `bank_account_id` / `bank_account_idStart` / `bank_account_idEnd` fields, which now carry **bank** ids.
 
 ### Branch Filter
 Applied on `branch.id`.
@@ -203,6 +205,18 @@ Verified with batch TTJV000007 (3 entries across 2 banks):
 ---
 
 ## Recent Updates
+
+### "Bank Account" filter renamed to "Banks" (2026-06-15)
+
+**Goal**: Let the user filter the report by a whole **bank** (company-wise) instead of by an individual bank account.
+
+**Changes**:
+1. Frontend label changed from "Bank Account" to **"Banks"**.
+2. The dropdown now lists the **company's banks** (de-duplicated from the company-scoped bank accounts, each of which carries its parent bank) showing `bank.name` with `bank.id` as the value. No new API call.
+3. Backend `getBankActivityReport` now filters on `bank_account.bank_id` (isEqual / between) instead of `bank_account.id`, so selecting a bank includes all of that bank's accounts.
+4. The on-report filter label looks up the **bank** name and reads "Banks" / "Banks Range".
+
+**Note**: Request field names were left as-is (`bankAccountFilter`, `bank_account_id`, `bank_account_idStart`, `bank_account_idEnd`); they now carry bank ids.
 
 ### Remarks Column (2026-06-08)
 
