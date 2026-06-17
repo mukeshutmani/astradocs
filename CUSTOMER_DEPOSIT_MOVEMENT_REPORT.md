@@ -144,8 +144,8 @@ totalBalance = totalCredit - totalDebit
 
 Settlements are batch-loaded separately (not via hasOne association) to capture ALL settlements per deposit:
 1. Collect all deposit IDs
-2. Fetch all `receipt_settlement_deposit` records for those IDs
-3. Group by `customer_deposit_id`
+2. Fetch all `receipt_settlement_deposit` records for those IDs (with their `receipt_settlement` parent)
+3. Group by `customer_deposit_id`, **skipping any whose `receipt_settlement.status === 'Void'`** — voided receipt settlements (e.g. a voided `MKST…`) must not appear as a debit line or count toward Total Settled / Balance (fix 2026-06-17).
 
 ---
 

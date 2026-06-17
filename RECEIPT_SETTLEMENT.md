@@ -69,7 +69,14 @@ The settlement page has the following sections (top to bottom):
 - **Adjustment Date**: Optional adjustment date
 
 ### 3. Invoice Table
-- **Columns**: Checkbox, Document Number, Date, Customer No, Customer Name, Status, Currency (PKR), Invoice Amount, Outstanding Amount, Pay Amount
+- **Columns**: Checkbox, Document Number, Date, Customer No, Customer Name, Status, Currency, Invoice Amount, Outstanding Amount, Pay Amount
+- **Currency labels (base-currency aware)**: amounts are converted to and shown in the
+  company **base currency** (derived from `currencies.to_currency`, default `PKR`). The
+  Currency cell, the invoice Total, the Settlement Summary (Original Invoice Total,
+  Previously Paid, Outstanding Before/After), the status messages, and the partial-
+  settlement notice all use `baseCurrency` instead of a hard-coded "PKR". (A USD-base
+  company shows `USD`.) Internal variable names like `originalPriceInPKR` keep their
+  names but hold base-currency values.
 - **Grouping**: Invoices are grouped by `invoice_number` via `useMemo`. Each group row shows aggregated amounts.
 - **Select All**: Checkbox in header selects/deselects all filtered invoices
 - **Pay Amount**: Editable when selected; defaults to full outstanding. Changing group pay amount distributes proportionally across invoices in the group.
@@ -274,8 +281,18 @@ The entire operation runs inside a Sequelize transaction with row-level locking.
 
 ### Exchange Rate in Backend
 - Invoice total is stored in original currency (`total_price`)
-- Converted to PKR using `invoice.exchange_rate` or latest currency rate
-- All settlement amounts in `receipt_settlement_invoice` are stored in PKR
+- Converted to the base currency using `invoice.exchange_rate` or latest currency rate
+- All settlement amounts in `receipt_settlement_invoice` are stored in the base currency
+
+### Printed Document — Base Currency (2026-06-17)
+- `receiptSettlement.ejs` (the printed `MKST…` voucher) no longer hard-codes "PKR".
+- `generateReceiptSettlement` derives the company **base currency** from
+  `currencies.to_currency` (default `PKR`) and passes `baseCurrency` to the template
+  (both the main and fallback `res.render`).
+- Every printed amount label — **Amount**, the DEPOSITS / CREDIT-NOTE / G/L / INVOICES-
+  SETTLED tables (Previous Balance / Amount Used / Remaining), Settlement Summary, and
+  TOTAL SETTLEMENT — now shows `baseCurrency`. Logic checks (`!== 'PKR'`) and internal
+  `…PKR` variable names were left as-is (they hold base-currency values).
 
 ### Multi-Currency Invoice Aggregation in the Listing (v1.1)
 - The settlement listing (`getOrdersByCustomerId` in `psback/controllers/customer.controller.js`) groups the lines of one invoice (same `invoice_number`/`document_number`) into a single row.

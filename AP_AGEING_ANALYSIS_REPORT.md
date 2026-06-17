@@ -290,6 +290,35 @@ After the last supplier, both PDF and Excel show a single **Grand Total** row (s
 
 ## Known Issues & Fixes
 
+### Fix: Base Currency + Voided Settlements (v1.3, 2026-06-17)
+
+**Problem**: For a company whose base currency is not PKR (e.g. company `1010` with
+`EUR → USD`), a foreign cost showed a huge wrong figure (EUR 451.04 appeared as
+**146,617**), and the cost row could vanish entirely.
+
+**Root causes**:
+1. The exchange-rate lookup was hard-coded to `to_currency = 'PKR'` **with no
+   `company_code` filter**, so a foreign cost was multiplied by *another* company's
+   `from→PKR` rate instead of this company's `from→base` rate.
+2. The "amount settled" sum included **voided** payment settlements, so an over-counted
+   settlement pushed the outstanding ≤ 0 and the report skipped the row.
+
+**Fix** (`getAPAgeingAnalysisReport`):
+1. Derive the company **base currency** = `currencies.to_currency` for that company
+   (default `PKR`), and query rates with `to_currency = <base> AND company_code = <this
+   company>`. EUR→USD now uses 1.15 → cost reads **USD 518.70**.
+2. Exclude settlements whose `payment_settlement.status === 'Void'` (the cost-query
+   include now joins `payment_settlement`). Outstanding = 518.70 − live-settled.
+3. The "Supplier Total **PKR**" label now follows the base currency
+   (`header.currency` / `apReportBaseCurrency`) → "Supplier Total **USD**".
+
+**Files Changed**:
+- `psback/controllers/report.controller.js` — `getAPAgeingAnalysisReport`
+- `psback/views/pages/reports/ap_ageing_analysis.ejs` — supplier-total currency label
+
+**Scope**: This (Report) variant. The **Detail** and **Summary** reports got the same
+fix (see their docs); the **AR** ageing reports still use the old hard-coded-PKR pattern.
+
 ### Change: Single Supplier Total + Supplier Summary with Grand Total (v1.2, 2026-06-11)
 
 **Request**: Each supplier showed two total rows with identical amounts ("Total in PKR" and "Supplier Total PKR:"). Only one was needed, and the report had no overall total.

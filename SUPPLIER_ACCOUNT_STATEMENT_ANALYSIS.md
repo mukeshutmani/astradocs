@@ -1053,6 +1053,70 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 **Follow-up (same date)**: passenger/pax column font size in the PDF template raised from 7px to 10px so it matches the ticket number column (`supplier-account-statement.ejs`, `isSmallFont` style in `renderTable`).
 
+### 16.11 Per-Passenger Amount Split on XO Ticket Rows (2026-06-17)
+
+**Goal**: Make the XO Ticket sections behave like the Customer Account Statement — a single XO with N passengers shows as **N rows, each row carrying the XO number AND its share of the amount** (instead of the whole amount on the first row and blank continuation rows).
+
+**Before**: `expandPaxRows` (section 16.8) already produced one row per ticket, but only the **first** row of each XO carried the XO number and the full money values (fare/taxes/commission/wht/charges/net); the other passenger rows were blank. PDF also drew the group as one borderless block.
+
+**Now**:
+1. `expandPaxRows` repeats the **text** fields (XO no, date, sector, class, status) on every passenger row, and **splits each money field evenly** across the passengers.
+2. Split uses a cent-accurate helper (`splitAmount`): leftover cents are handed to the first rows so the per-row values **sum back exactly** to the XO total — section totals and reconciliation are unchanged.
+3. PDF: the June-8 internal-border suppression (`__cont` / `__lastInGroup`) was removed so each passenger row renders as a normal bordered row, matching Excel (which already bordered every row) and the Customer report look.
+
+**Scope**: Ticket Bookings **and** Refund Ticket Bookings (both run through `expandPaxRows`). Hotel/General sections and the summary ("Add Sale Invoices", Net Balance) are unchanged — "Add Sale Invoices" is computed from the XO totals independently of the row split.
+
+**Why totals stay correct**: both the PDF (`renderTable`, sums `row[col]`) and Excel (sums `arr.reduce(row[col])`) compute section totals by summing every row; the cent-accurate split guarantees the sum equals the original XO total.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — `splitAmount` helper + rewritten `expandPaxRows`.
+- `psback/views/pages/reports/supplier-account-statement.ejs` — removed the `__cont`/`__lastInGroup` border suppression in `renderTable`.
+
+### 16.12 Keep Summary Box on One Page (2026-06-17)
+
+**Problem**: In the PDF, the Summary box split across pages (e.g. Opening Balance B/F … Less JV Debits on one page, Add JV Credits / Net Balance on the next).
+
+**Fix**: Added `page-break-inside: avoid` to the Summary wrapper `div` so the heading + all summary rows stay together; if the block does not fit on the current page it moves as a whole to the next page. Display-only, no data/calculation change.
+
+**Files Modified**:
+- `psback/views/pages/reports/supplier-account-statement.ejs` — Summary wrapper `div`.
+
+### 16.13 Per-Passenger Serial Number (S.No) on Ticket Bookings (2026-06-17)
+
+**Goal**: Show a serial number against each passenger row in the **Ticket Bookings** and **Refund Ticket Bookings** sections, restarting at 1 for every XO (so an XO with 5 passengers shows 1–5).
+
+**Implementation**:
+1. `expandPaxRows` tags each expanded row with `sno = String(index + 1)` — the index within its XO group, so the count restarts per XO. Stored as a string so the PDF renders it as `1` (not the money-formatted `1.00`).
+2. New **S.NO** column added to the Ticket Bookings **and** Refund Ticket Bookings column arrays — PDF (`renderTable` calls) and Excel (`addSection` calls). **S.NO is the first column** in every section that has it (Ticket, Refund Ticket, General — 2026-06-17).
+3. Header label mapped to `S.NO` in both PDF and Excel `columnHeaderMap`.
+
+**Scope**: Ticket Bookings and Refund Ticket Bookings (both run through `expandPaxRows`). Totals are unaffected (`sno` is not a numeric/total column).
+
+**Column width (2026-06-17)**: in the PDF the S.No header/cell use `width: 1%; white-space: nowrap;` so the column collapses to fit its digit and the freed width goes to the other columns (it never widens). Excel uses a shared worksheet-level auto-width loop (min 10) across all sections, so the S.No column there is not individually narrowed.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — `sno` in `expandPaxRows`, `sno` in Ticket Bookings Excel columns, `sno` header in Excel `columnHeaderMap`.
+- `psback/views/pages/reports/supplier-account-statement.ejs` — `sno` in Ticket Bookings `renderTable` columns, `sno` header in PDF `columnHeaderMap`.
+
+### 16.14 General/Other: Per-Passenger Rows, S.No, and Pax-wise Amount (2026-06-17)
+
+**Goal**: Bring the General/Other Bookings section in line with the Ticket section — one row per passenger, a per-XO serial number, and the amount split per passenger.
+
+**Implementation**:
+1. The General map→row conversion now keeps the `passengers` **array** on the row (it previously joined them into a single `pax` string).
+2. New `expandGeneralRows` helper (after the ticket/refund expands) turns each XO row into **one row per passenger**: text fields repeat, the `net` is split with the same cent-accurate `splitAmount`, and each row gets `sno` (1..N per XO) + `pax` (that passenger).
+3. **S.NO** column added before `pax` in the General column arrays — PDF (`renderTable`) and Excel (`addSection`).
+
+**Notes**:
+- Services with no passengers produce a single row (S.No 1, blank pax) carrying the full amount.
+- Section totals, "Add Sale Invoices", and Net Balance are unchanged (totals sum every row; the split sums back to the XO total; "Add Sale Invoices" is computed from XO totals independently).
+
+**Hajj/Umrah in Remarks (2026-06-17)**: in the General/Other section the **Remarks** column now shows the word **`Hajj`** or **`Umrah`** when the service type is Hajj/Umrah (read from `service.service_type.type`, so no extra query); all other service types keep a blank Remarks. (The Customer Account Statement shows the package *name* in Remarks instead — see that report's docs.)
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — general row keeps `passengers` array; `expandGeneralRows`; `sno` in the General Excel columns.
+- `psback/views/pages/reports/supplier-account-statement.ejs` — `sno` in the General `renderTable` columns.
+
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -1089,5 +1153,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-06-12 — Section 16.10 (Full ticket number with airline prefix, matching XO document display)
+**Last Updated**: 2026-06-17 — Section 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
 

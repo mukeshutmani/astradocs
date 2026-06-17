@@ -68,6 +68,7 @@ The Customer Account Statement Report:
    - Options: **Discount, Rebate, T.Fee, SST** (internal keys: `discount`, `rebate`, `transactionFee`, `sst`)
    - The user can tick one or more; those columns are **hidden** from the Ticket Booking and Refund Ticket Booking tables (PDF + Excel). Nothing selected = report unchanged.
    - **Display-only**: hiding a column does NOT change the per-row **Net** or any total — the hidden amounts are still included in the math (Net is precomputed and the section totals sum `Net`). The "Total" row colspan shrinks by the number of hidden columns so the table stays aligned.
+   - **T.Fee folds into Taxes when hidden (2026-06-17)**: when **T.Fee** (`transactionFee`) is hidden, its amount is added into the **Taxes** column for each Ticket Booking row (e.g. Taxes 200 + T.Fee 50 → Taxes shows 250). This is display-only — **Net**, **Total Sales**, and **Net Balance** are unchanged. Applied at the ticket row build in `getCustomerAccountStatementReport` (`taxes = (taxesPerPassenger + (hidden ? transactionFeePerPassenger : 0)) * exchangeRate`), so both PDF and Excel (including the Excel Taxes total) reflect it. Only affects the Ticket Bookings table (the Refund-Ticket table is not populated in this report).
    - UI: the trigger is an **auto-width** dropdown button (`w-auto`, `min-w-[160px]`, `max-w-full`) that grows with the number of selected labels and stays within the card; built with `DropdownMenuCheckboxItem` (menu stays open on toggle via `onSelect` preventDefault).
 
 5. **Include Raised Invoices** — NEW
@@ -425,7 +426,7 @@ Columns:
 - Invoice
 - Pax (passenger names)
 - Ref No (reference number - empty)
-- Remarks (remarks - empty)
+- Remarks (Umrah/Hajj **package name** when the service is Umrah or Hajj, otherwise empty — see [Umrah/Hajj Package Name in Remarks](#umrahhajj-package-name-in-remarks-2026-06-17))
 - Vendor (vendor name - empty)
 - Transaction Date (invoice_date)
 - Net (total amount)
@@ -694,6 +695,34 @@ Only receipts with GL account payments totaling > 0 are displayed:
 - Mixed payment methods → only GL account portion shown in amount
 
 ---
+
+## 10.0.7 Umrah/Hajj Package Name in Remarks (2026-06-17)
+
+For **General/Other Bookings**, the **Remarks** column now shows the **package name** when the service is an Umrah or Hajj service:
+- The customer query's `service` include now loads `service_umrah` and `service_hajj` (attribute `package_name` only).
+- The General booking row sets `remarks = service.service_umrah?.package_name || service.service_hajj?.package_name || ""`.
+- All other General/Other services keep a blank Remarks (unchanged).
+- Display-only — no effect on amounts, Total Sales, or Net Balance. PDF and Excel both already render the Remarks column.
+
+**Files Modified**: `psback/controllers/report.controller.js` (`getCustomerAccountStatementReport`) — `service_umrah`/`service_hajj` includes + `remarks` value on General bookings.
+
+## 10.0.8 Per-Passenger Serial Number (S.NO) on Ticket Bookings (2026-06-17)
+
+The **Ticket Bookings** section now has an **S.NO** column as the **first column**, numbering passenger rows **1..N per invoice** (restarts each invoice). Mirrors the Supplier Account Statement.
+- Controller: the per-passenger `forEach` index is used — `sno: String(idx + 1)` on each ticket row.
+- PDF (`customer-account-statement.ejs`): S.NO `th`/`td` added as the first column, narrowed with `width:1%; white-space:nowrap;` (the customer table has no clip rule, so the header shows in full). Total-row colspan bumped `15 → 16` for the extra column.
+- Excel: `'sno'` added first to the Ticket `addSection` columns; header label special-cased to `S.NO`.
+- Display-only; totals and balances unchanged. Scope: Ticket (Air) section only.
+
+## 10.0.9 General/Other Bookings — One Row Per Passenger (2026-06-17)
+
+The **General/Other Bookings** section now renders **one row per passenger** (it previously showed a single row per invoice with passenger names comma-joined).
+- For each invoice, the build loops the service passengers and pushes one row each; the invoice total is **split across passengers** with a cent-accurate split, so the section total still equals the invoice total.
+- `remarks` (Umrah/Hajj package name) and other fields repeat on each passenger row.
+- Services with no passengers still produce a single row carrying the full amount.
+- "Add Sale Invoices" / Net Balance unaffected (summary adds the invoice total once per invoice, independent of the row split).
+
+**Note on Hajj package name**: `service_hajjs.package_name` is currently NULL for existing Hajj records, so Hajj rows show a blank Remarks until the package name is entered; Umrah package names are populated and display correctly.
 
 ## 11. Special Handling & Edge Cases
 
