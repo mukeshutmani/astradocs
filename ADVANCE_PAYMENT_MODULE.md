@@ -74,8 +74,8 @@ On create (`createSupplierDeposit`):
    and **`<base>` Equivalent** lines, labelled with the company **base currency** (was
    hard-coded "PKR"). The base currency is derived in the controller from
    `currencies.to_currency`.
-5. Open item: `customerDepositDocument.ejs` (customer deposit) still hard-codes
-   "rupees (PKR)" / "PKR Equivalent" — same fix not yet applied there.
+5. The **customer** deposit equivalent (`customerDepositDocument.ejs` /
+   `deposit.controller.js`) has the same fix applied — see `CUSTOMER_DEPOSIT_MODULE.md`.
 
 ## 7. Void behaviour
 1. Voiding a supplier deposit checks it is not in use by a payment settlement, then sets

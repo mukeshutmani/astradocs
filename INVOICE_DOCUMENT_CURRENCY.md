@@ -49,10 +49,11 @@ documents and the frontend Documents listing page (see §5–§6).
    `payment.controller.js` (from `currencies.to_currency`). Settlement amounts have no
    currency column → they are stored in the base currency, so only the labels were wrong.
    Logic checks (`!== 'PKR'`) were intentionally left as-is.
-5. All document templates are now base-currency-aware. Still pending:
-   `customerDepositDocument.ejs` Amount-In-Words; reports/summaries labelled "(PKR)";
-   and the Supplier-Payments page (`Payments.jsx`) "Available Amount" / "Total Deposit
-   Amount to Use" still print "PKR".
+5. **Done**: `supplierDepositDocument.ejs` and `customerDepositDocument.ejs` —
+   currency-aware Amount-In-Words + base-currency Equivalent lines.
+6. All document templates are now base-currency-aware. Still pending: reports/summaries
+   labelled "(PKR)"; and parts of the Supplier-Payments page (`Payments.jsx`) settlement
+   summary still print "PKR".
 
 ## 6. Document listing page (frontend tabs)
 The Documents list page (`psfront/src/pages/Document/*List.jsx`) showed a hard-coded
