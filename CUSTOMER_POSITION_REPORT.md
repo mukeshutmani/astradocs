@@ -259,6 +259,18 @@ All currency exchange rate queries (deposits, historical deposits) also filter b
 
 ## Recent Updates
 
+### Exclude Void-Leftover Raised Invoices (2026-06-16)
+
+**Problem**: With **Include Raised** ON, a customer's **ADD:Sales Invoice** total doubled (example: KH0152 showed 52,622 instead of 26,311).
+
+**Root cause**: Voiding an invoice (`_voidInvoiceDocumentInTx` in `invoice.controller.js`) auto-creates a **Raised** replacement draft on the **same service**. With Include Raised ON, that leftover draft was counted on top of the service's real Printed invoice, double-counting it. (The Void row itself was already correctly excluded — it is the auto-created Raised replacement that leaked in.)
+
+**Rule**: When `includeRaised` is ON, a **Raised** invoice is dropped if its **service also has a `Void` invoice** (i.e. it is a void replacement). Genuine Raised drafts (services with no void) still count, so the feature is unchanged for them. Discriminating on the missing invoice number was rejected — un-printed invoices legitimately have no number, so that would have dropped genuine drafts too.
+
+**Where**: `psback/controllers/report.controller.js` → `getCustomerPositionReport`, right after the period-invoice fetch/date-filter (Step 5). One extra query gets the set of `service_id`s that have a `Void` invoice (scoped to the report's `serviceIds`); period `invoices` are then filtered to drop `status = 'Raised'` rows on those services.
+
+**Not changed**: The **Opening Balance B/F** path uses the shared `getCustomerOpeningBalances` helper (also used by the Customer Account Statement). A void+Raised that occurred *before* the report period could still double-count there; that shared helper was left untouched to avoid affecting the Account Statement — flagged for a separate decision.
+
 ### Single-Date Heading (2026-06-10)
 
 **Goal**: When the report is run for a single day (From = To, e.g. the `=` operator or a between with the same date twice), the PDF heading showed "Document Date: 2026-06-01 To 2026-06-01". It now shows just "Document Date: 2026-06-01". A real range still shows "2026-06-01 To 2026-06-05".

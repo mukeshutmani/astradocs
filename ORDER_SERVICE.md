@@ -1,4 +1,4 @@
-# Order Service Section
+'# Order Service Section
 
 **Version**: 1.0
 **Date**: 2026-06-13
@@ -49,8 +49,8 @@ Component: `ServicesDropdown` (one per type), driven by the `serviceTypes` list.
 | Status | `service.status` |
 | Supplier / Reference | `supplier.supp_name` + optional `supplier_reference` |
 | Qty | Passenger/unit count (Visa uses passenger count) |
-| Total Price | **What the customer is charged**, in PKR (see §4) |
-| Total Cost | **What is paid to the supplier**, in PKR (see §4) |
+| Total Price | **What the customer is charged**, in the company's **base currency** (see §4) |
+| Total Cost | **What is paid to the supplier**, in the company's **base currency** (see §4) |
 | Documents | `ServiceDocumentsModal` — badge with count, opens documents pop-up |
 | Actions | Transfer (move service to another order) + Delete (red bin) |
 
@@ -82,16 +82,30 @@ issue, not a stored-value issue.
 Exchange rates: the **saved** rate on the cost/invoice (including voided) is used
 first, falling back to the live currency table.
 
+> **Base-currency label (2026-06-16)**: the big number's currency label is **not**
+> hard-coded to PKR. It is taken from the `to_currency` of the entered currency's
+> record for that company (`getBaseCurrencyForCurrency`). Example: company `1010`
+> has `EUR → USD`, so an invoice entered in EUR shows `531.47 USD` with `(462.15
+> EUR)` underneath. PKR-based companies are unaffected (falls back to `PKR`). The
+> grey bracket line only appears when the entered currency differs from the base.
+
 > **Discount precision (2026-06-12)**: typing a discount *amount* derives the
 > percent at 6-decimal precision so the exact typed amount sticks. See
 > `COST_CALCULATION_SYSTEM_ANALYSIS.md`.
 
 ---
 
-## 5. Summary (All values in PKR)
+## 5. Summary (All values in base currency)
 
 A single totals row across all services: Charge Type, Price, Cost, SST, Profit,
 Margin %, Payment, Receipt, Pending Refund, Debtor Balance.
+
+The totals are already converted to the company's **base currency** (each service is
+multiplied by its exchange rate before being summed). The heading and every column
+label show that base currency (`summaryBaseCurrency`, derived via
+`getBaseCurrencyForCurrency` from the first service's invoice currency → its
+`to_currency`); they are no longer hard-coded to PKR. PKR-based companies fall back
+to `PKR`. Example: company `1010` (EUR → USD) shows "Summary (All values in USD)".
 
 ---
 

@@ -74,6 +74,7 @@ The Customer Account Statement Report:
    - Checkbox: `includeRaised` (default OFF)
    - When OFF (default): only `Printed`, `Settled`, `Partially Settled` invoices appear (unchanged behaviour)
    - When ON: un-printed `Raised` invoices are also pulled in and counted in **Total Sales** and **Net Balance** (and in **Opening Balance B/F** for Raised invoices dated before the period, so reconciliation holds)
+   - **Un-numbered Raised drafts are skipped** (2026-06-16): a Raised invoice whose `invoice_number` is still blank (NULL or empty) is an unfinished draft, so it is excluded from the report and from the Opening Balance. Numbered Raised invoices still appear. Applied in both the period invoice query and `customerOpeningBalance.service.js`.
    - Each booking row shows a **Status** column (after Invoice) with the document's actual status (Raised / Printed / Settled / Partially Settled), in both PDF and Excel
    - Caveat: a Raised invoice has no frozen exchange rate (saved only at print time), so foreign-currency Raised invoices use the **live** rate. PKR invoices are unaffected.
 
@@ -722,6 +723,13 @@ The same status list is applied in the two invoice queries in the controller and
 `customerOpeningBalance.service.js` (where `includeRaised` defaults to false, so the Customer
 Position Report, which does not pass the flag, is unaffected).
 
+**Un-numbered Raised drafts excluded (2026-06-16)**: when `includeRaised` is ON, the invoice
+query additionally excludes Raised invoices whose `invoice_number` is blank (NULL or empty) via
+`NOT (status = 'Raised' AND invoice_number IS NULL/'')`. These are unfinished drafts (an invoice
+number is assigned later), so they would otherwise show as a row with no Invoice number and 0.00
+amounts. The same exclusion is mirrored in `customerOpeningBalance.service.js` so a draft cannot
+affect the Opening Balance B/F.
+
 ### 11.5 Deposit Calculation
 All deposits are shown with their FULL values converted to PKR
 - Full deposit amount is converted using the deposit's currency exchange rate for both display and calculations
@@ -974,5 +982,5 @@ WHERE customer_deposit_id IN ({depositIds})
 
 ---
 
-**Last Updated**: June 2026 — Added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); earlier: Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
+**Last Updated**: June 2026 — Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
 

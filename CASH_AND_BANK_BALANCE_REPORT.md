@@ -55,12 +55,12 @@ Data is grouped by chart of account. Each account group contains:
 1. **Account Header Row**: Account number and description (e.g., "1001-Cash in Hand")
 2. **AR Deposits Section**: All customer deposits received into the account
 3. **AR Deposits Total Row**: Sum of deposit amounts
-4. **Payments Section**: All payments made from the account (Supplier, Expense, or Credit Note)
-5. **Payments Total Row**: Sum of payment amounts
-6. **Account Balance Row**: Net balance = Total AR Deposits - Total Payments (highlighted in yellow in Excel)
+4. **Payments Section**: All payments linked to the account. Outflows (Supplier, Expense, Credit Note, and internal transfer-out `account_from`) show in **Paid Amount**. Internal transfer-in legs (`transfer_type = 'account_to'`, money received into this account) stay listed here but show their amount in **Received Amount**, with Paid Amount blank.
+5. **Payments Total Row**: Paid Amount = sum of outflow payments (excludes transfer-ins); Received Amount = sum of transfer-in legs
+6. **Account Balance Row**: Net balance = (Total AR Deposits + transfer-ins received) − Total Payments (highlighted in yellow in Excel)
 7. **Summary Section** (when date filter is applied):
-   - **Previous Balance**: Total deposits minus payments before the filter start date (shown with date = 1 day before start)
-   - **Period Activity**: Deposits minus payments within the filtered period
+   - **Previous Balance**: (deposits + transfer-ins) minus outflow payments before the filter start date (shown with date = 1 day before start)
+   - **Period Activity**: (deposits + transfer-ins received) minus payments within the filtered period
    - **Fund Available**: Previous Balance + Period Activity (highlighted in green)
 
 ### Columns
@@ -75,8 +75,8 @@ Data is grouped by chart of account. Each account group contains:
 | Remarks | `remarks` | Remarks from the deposit/payment document |
 | Staff ID | `user.username` | Staff who created the transaction |
 | Currency | `currency_code.currency.currency_code` | Transaction currency (default: PKR) |
-| Received Amount | `amount * exchange_rate` (deposits only) | Deposit amount converted to PKR using company-specific exchange rate; empty for Payment rows |
-| Paid Amount (Base Currency) | `amount * exchange_rate` (payments only) | Payment amount converted to PKR using company-specific exchange rate; empty for AR Deposit rows |
+| Received Amount | `amount * exchange_rate` (deposits + transfer-in payments) | Deposit amount converted to PKR; **also** holds internal transfer-in legs (`transfer_type = 'account_to'`) listed in the Payments section. Empty for outflow payment rows |
+| Paid Amount (Base Currency) | `amount * exchange_rate` (outflow payments only) | Payment amount converted to PKR. Empty for AR Deposit rows and for transfer-in (`account_to`) rows |
 
 ---
 
@@ -92,14 +92,23 @@ total_ar_deposits.base_amount = sum(deposit.base_amount) for all deposits in the
 ### Per-Account Payment Totals
 
 ```
-total_payments.amount = sum(payment.amount) for all payments in the account
+total_payments.amount    = sum(payment.amount) for OUTFLOW payments (excludes transfer_type = 'account_to')
+total_payments.received  = sum(payment.received_amount) for transfer-in legs (transfer_type = 'account_to')
 total_payments.base_amount = sum(payment.base_amount) for all payments in the account
 ```
+
+### Internal Transfers (`transfer_type`)
+
+An internal transfer between two accounts writes two `payment_settlement_payments` rows:
+- `account_from` — money OUT of the source account → shown as a normal outflow (Paid Amount).
+- `account_to` — money IN to the destination account → shown in Received Amount and added (not subtracted) in the balance.
+
+Normal supplier/expense/credit-note payments have `transfer_type = NULL` and are always outflows.
 
 ### Account Balance
 
 ```
-account_balance.amount = total_ar_deposits.amount - total_payments.amount
+account_balance.amount = (total_ar_deposits.amount + total_payments.received) - total_payments.amount
 account_balance.base_amount = total_ar_deposits.base_amount - total_payments.base_amount
 ```
 
@@ -245,6 +254,23 @@ Payments are classified by type based on linked entities:
 - All amounts formatted with comma separators and 2 decimal places
 
 ---
+
+## Recent Updates
+
+### Internal transfer-ins shown as Received, not Paid (2026-06-16)
+
+**Problem**: An internal transfer received into a bank account (e.g. TPPY00000005 into 181050) was showing in **Paid Amount** and being subtracted as an outflow, understating the balance.
+
+**Root cause**: A transfer writes two `payment_settlement_payments` rows — `account_to` (money in) and `account_from` (money out). The report treated **every** payment-settlement row as an outflow and ignored `transfer_type`.
+
+**Fix** (`getCashAccountBalanceReport`):
+1. Rows with `transfer_type = 'account_to'` keep their place in the Payments list but put the amount in **Received Amount** (Paid Amount blank), flagged via `is_transfer_in`.
+2. `total_payments.amount` excludes transfer-ins; a new `total_payments.received` subtotal sums them.
+3. `account_balance.amount` and **Period Activity** = (AR deposits + transfer-ins received) − payments.
+4. **Previous Balance** counts pre-period transfer-ins as money in (added), not out.
+5. PDF template `cash-account-balance.ejs`: payment rows now render `received_amount` in the Received column and show Paid only when present; the Total Payments row shows the received subtotal. Excel picks up the new fields and sets the Payments-total Received cell.
+
+**Scope note**: applies to **all** `account_to` rows, not just one document — for account 181050 in May–Jun 2026 that is TPPY00000005, TPPY00000006 and TTPY00000039.
 
 ## Code References
 
