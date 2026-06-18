@@ -426,7 +426,7 @@ Columns:
 - Invoice
 - Pax (passenger names)
 - Ref No (reference number - empty)
-- Remarks (Umrah/Hajj **package name** when the service is Umrah or Hajj, otherwise empty — see [Umrah/Hajj Package Name in Remarks](#umrahhajj-package-name-in-remarks-2026-06-17))
+- Remarks (the word **Umrah**/**Hajj** when the service type is Umrah/Hajj, otherwise empty — see [Hajj/Umrah Word in Remarks](#1007-hajjumrah-word-in-remarks-2026-06-17))
 - Vendor (vendor name - empty)
 - Transaction Date (invoice_date)
 - Net (total amount)
@@ -696,15 +696,14 @@ Only receipts with GL account payments totaling > 0 are displayed:
 
 ---
 
-## 10.0.7 Umrah/Hajj Package Name in Remarks (2026-06-17)
+## 10.0.7 Hajj/Umrah Word in Remarks (2026-06-17)
 
-For **General/Other Bookings**, the **Remarks** column now shows the **package name** when the service is an Umrah or Hajj service:
-- The customer query's `service` include now loads `service_umrah` and `service_hajj` (attribute `package_name` only).
-- The General booking row sets `remarks = service.service_umrah?.package_name || service.service_hajj?.package_name || ""`.
-- All other General/Other services keep a blank Remarks (unchanged).
+For **General/Other Bookings**, the **Remarks** column shows the word **`Umrah`** or **`Hajj`** when the service type is Umrah/Hajj (read from `service.service_type.type`); all other service types keep a blank Remarks. This matches the Supplier Account Statement and needs no extra table joins.
+- The General booking row sets `remarks = (type === 'umrah' || type === 'hajj') ? service.service_type.type : ""`.
 - Display-only — no effect on amounts, Total Sales, or Net Balance. PDF and Excel both already render the Remarks column.
+- (Earlier this briefly used the Umrah/Hajj `package_name`, but that was simplified to the type word — Hajj records often have a blank package name.)
 
-**Files Modified**: `psback/controllers/report.controller.js` (`getCustomerAccountStatementReport`) — `service_umrah`/`service_hajj` includes + `remarks` value on General bookings.
+**Files Modified**: `psback/controllers/report.controller.js` (`getCustomerAccountStatementReport`) — `remarks` value on General bookings.
 
 ## 10.0.8 Per-Passenger Serial Number (S.NO) on Ticket Bookings (2026-06-17)
 
@@ -718,11 +717,9 @@ The **Ticket Bookings** section now has an **S.NO** column as the **first column
 
 The **General/Other Bookings** section now renders **one row per passenger** (it previously showed a single row per invoice with passenger names comma-joined).
 - For each invoice, the build loops the service passengers and pushes one row each; the invoice total is **split across passengers** with a cent-accurate split, so the section total still equals the invoice total.
-- `remarks` (Umrah/Hajj package name) and other fields repeat on each passenger row.
+- `remarks` (the word Umrah/Hajj, see 10.0.7) and other fields repeat on each passenger row.
 - Services with no passengers still produce a single row carrying the full amount.
 - "Add Sale Invoices" / Net Balance unaffected (summary adds the invoice total once per invoice, independent of the row split).
-
-**Note on Hajj package name**: `service_hajjs.package_name` is currently NULL for existing Hajj records, so Hajj rows show a blank Remarks until the package name is entered; Umrah package names are populated and display correctly.
 
 ## 11. Special Handling & Edge Cases
 
