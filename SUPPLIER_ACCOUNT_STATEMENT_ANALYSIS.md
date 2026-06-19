@@ -1117,6 +1117,23 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 - `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — general row keeps `passengers` array; `expandGeneralRows`; `sno` in the General Excel columns.
 - `psback/views/pages/reports/supplier-account-statement.ejs` — `sno` in the General `renderTable` columns.
 
+### 16.15 General/Other: Split Per Cost Item, Not Per Whole XO (2026-06-18)
+
+**Problem**: One XO can contain **multiple cost items at different rates** (e.g. KHXO00000208 = 21 pax @100,000 + 2 pax @85,000). Section 16.14 pooled all of an XO's services into one entry (23 pax, total 2,270,000) and divided **equally** → every passenger showed 98,695.65, which is wrong. The 21-pax item should be 100,000 each and the 2-pax item 85,000 each.
+
+**Root cause**: each cost item is its own `service`/`cost` row but they share the XO `document_number`, so the General build merged them and `expandGeneralRows` split the merged total across all passengers.
+
+**Fix**:
+1. The General build now splits **each service (cost item)** amount across **its own** passengers (cent-accurate) at processing time, producing per-passenger `{ pax, remarks, net }` rows.
+2. The XO map entry accumulates these `paxRows` across its items (instead of pooling a `passengers` array + summed `net`).
+3. `expandGeneralRows` simply lists each `paxRow` with its **own** pre-split net — it no longer re-divides. The section total still equals the XO total.
+4. **S.No restarts at 1 per cost item** (2026-06-18) — it is assigned when each item's `paxRows` are built (`sno = pi + 1`), so the 21-pax item shows 1–21 and the 2-pax item shows 1–2, matching the XO/Cost document. (Previously it ran 1..N across the whole XO.)
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — General build now stores per-item `paxRows`; `expandGeneralRows` emits them without re-splitting.
+
+**Known same-pattern risk (not changed)**: the **Ticket / Refund-Ticket** sections (16.11) still split the merged XO total evenly across all passengers via `expandPaxRows`. For an XO with multiple **ticket** cost items at different rates, the same per-item issue could appear there — left as-is since this report was about General/Umrah; revisit if it surfaces for tickets.
+
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -1153,5 +1170,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-06-17 — Section 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
+**Last Updated**: 2026-06-18 — Section 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
 

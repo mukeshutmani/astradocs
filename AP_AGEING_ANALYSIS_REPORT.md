@@ -319,6 +319,98 @@ After the last supplier, both PDF and Excel show a single **Grand Total** row (s
 **Scope**: This (Report) variant. The **Detail** and **Summary** reports got the same
 fix (see their docs); the **AR** ageing reports still use the old hard-coded-PKR pattern.
 
+### Fix: Credit Limit formatted as accounting amount (v1.6, 2026-06-19)
+
+**Problem**: The per-supplier **Credit Limit** value printed as a raw number (`60000000.00`),
+left-aligned — unlike every other money column.
+
+**Fix** (`ap_ageing_analysis.ejs`, PDF view): the Credit Limit cell now runs the value through
+the same `formatAmount()` helper and is `text-align:right`, so it shows as `60,000,000.00`,
+right-aligned, matching the amount columns.
+
+**Files Changed**:
+- `psback/views/pages/reports/ap_ageing_analysis.ejs` — Credit Limit cell formatting
+
+**Scope**: PDF view only. (The Excel export's Credit Limit cell was not part of this request.)
+
+### Fix: Opening XO numbers now shown instead of `COST-<id>` (v1.5, 2026-06-18)
+
+**Problem**: Opening-balance rows showed placeholder labels like `COST-6752` … `COST-6755`
+instead of a real XO number.
+
+**Root cause**: These are **opening-balance imported costs** (`costs.is_opening = 1`,
+`import_batch_id` set, no order, no costing document). The XO number was taken only from the
+costing `document`, which opening costs don't have — so the code fell back to `COST-<cost.id>`.
+The real number was sitting unused in the cost's own `xo_number` column (e.g. `TTOX00501518`).
+
+**Fix** (`getAPAgeingAnalysisReport`):
+1. The XO-number resolution now prefers: costing `document.document_number` →
+   `cost.xo_number` → `COST-<id>` (last-resort fallback only).
+2. Because opening rows now carry a real `TTOX…` number, they also receive **Manual JE
+   settlement** subtraction (previously skipped for `COST-*` rows) — correct, since an opening
+   XO settled by manual JE should reduce its outstanding.
+
+**Files Changed**:
+- `psback/controllers/report.controller.js` — `getAPAgeingAnalysisReport` (`xoNumber` fallback)
+
+**Scope**: Report variant only. The **Summary** and **Detail** functions are unchanged.
+
+### Fix: Manual JE Settlements now reduce outstanding (v1.4, 2026-06-18)
+
+**Problem**: An XO settled through a **Manual Journal Entry** still showed its full amount
+outstanding. Example: Q & K `TTXO00000031` (cost 25,120 PKR) was settled 25,000 via Manual
+JE `TTJV000111`, but the report kept showing **25,120** instead of the real remaining **120**.
+
+**Root cause**: The report computed outstanding only as `cost − payment_settlement_costs`.
+Manual JE settlements are not in that table — they are journal entries tagged to the XO via
+`journal_entries.analysis_code1 = <document_number>` inside a live `Manual JE` batch. The
+report never read them, even though cost status, AR aging, and the document picker already do
+(via `services/manualJeAdjustment.js`).
+
+**Fix** (`getAPAgeingAnalysisReport` only):
+1. Import `sumManualJeAdjustment` from `services/manualJeAdjustment.js`.
+2. In the XO-grouping loop, subtract `sumManualJeAdjustment(documentNumber)` from each XO
+   group's outstanding (skipped for `COST-*` fallback rows that have no real XO number).
+3. If the JE fully settles the XO, the row is dropped (same as fully-paid costs).
+4. The helper counts **live** Manual JE only — Void batches and `VOID REVERSAL -` rows are
+   excluded, so a voided JE nets back to zero.
+
+**Note on duplicate XO numbers**: Because `document_number` is reused across documents/suppliers
+in this data, a JE tagged to a number shared by two suppliers applies to both — this mirrors the
+existing `recalculateCostStatusByDocNumber` behaviour and is intentionally kept consistent.
+
+**Files Changed**:
+- `psback/controllers/report.controller.js` — `getAPAgeingAnalysisReport` (import + JE subtraction)
+
+**Scope**: Report variant only. The **Summary** and **Detail** functions still ignore Manual
+JE settlements (unchanged).
+
+### Fix: Voided Settlements actually applied in code (v1.3.1, 2026-06-18)
+
+**Problem**: The v1.3 entry above described excluding voided settlements, but that change
+was **not present in the running code** — `getAPAgeingAnalysisReport` still summed every
+`payment_settlement_costs` row regardless of status. Example: Q & K cost `TTXO00000031`
+(true cost **25,120 PKR**) had 4 voided settlements of 120 each; the report subtracted
+480 and showed **24,640** instead of 25,120.
+
+**Fix** (`getAPAgeingAnalysisReport` only):
+1. The cost query's `payment_settlement_cost` include now nests `payment_settlement` so
+   the parent settlement status is available.
+2. The "amount settled" reducer **skips any row whose `payment_settlement.status === 'Void'`**.
+   `TTXO00000031` now reads **25,120**.
+
+**Known limitation (not addressed here)**: This report still derives outstanding purely
+from costs minus live `payment_settlement_costs`. **Manual JE settlements** (e.g. batch
+`TTJV000111` debiting Trade Creditors) post only to the GL with no link back to the cost,
+so they are **not** reflected — an XO settled by manual JE still appears outstanding. The
+base-currency portion of the v1.3 entry is likewise **not yet** in the code.
+
+**Files Changed**:
+- `psback/controllers/report.controller.js` — `getAPAgeingAnalysisReport` (settlement include + void filter)
+
+**Scope**: Report variant only. The **Summary** and **Detail** functions still sum voided
+settlements (unchanged).
+
 ### Change: Single Supplier Total + Supplier Summary with Grand Total (v1.2, 2026-06-11)
 
 **Request**: Each supplier showed two total rows with identical amounts ("Total in PKR" and "Supplier Total PKR:"). Only one was needed, and the report had no overall total.

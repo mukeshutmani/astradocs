@@ -720,6 +720,7 @@ The **General/Other Bookings** section now renders **one row per passenger** (it
 - `remarks` (the word Umrah/Hajj, see 10.0.7) and other fields repeat on each passenger row.
 - Services with no passengers still produce a single row carrying the full amount.
 - "Add Sale Invoices" / Net Balance unaffected (summary adds the invoice total once per invoice, independent of the row split).
+- **S.NO column (2026-06-18)**: an **S.NO** column was added as the **first column**, numbering passenger rows **1..N per invoice** (restarts each invoice) — `sno: String(gi + 1)` on each row; added to the PDF table (first `th`/`td`, narrowed via `width:1%; nowrap`, Total-row colspan bumped 8→9) and to the Excel `addSection` columns (header `S.NO`).
 
 ## 11. Special Handling & Edge Cases
 

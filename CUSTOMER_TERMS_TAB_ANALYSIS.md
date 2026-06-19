@@ -106,9 +106,9 @@ Fields are conditionally shown/disabled based on the selected Credit Type:
 
 Displays read-only financial calculation fields:
 - **Total Invoices** - Sum of all customer invoices
-- **Total Settlements** - Sum of all settlement payments
-- **Total Deposit** - Sum of all customer deposits
+- **Total Receipts & Deposits** - Sum of G/L receipts + deposits
 - **Total Refund** - Sum of all customer refunds
+- **Total JEs** - Net Manual JE adjustment against the customer's receivable (see [Total JEs](#total-jes-manual-je))
 - **Current Outstanding** - Calculated total outstanding balance
 
 **Key Features:**
@@ -427,9 +427,23 @@ Terms Tab Content Rendered
 
 ### Outstanding Balance Calculation:
 ```
-Outstanding Balance = Total Invoices - Total Refunds - Total Deposits
-                    = Σ(invoices) - Σ(credit_notes) - Σ(deposits)
+Outstanding Balance = Total Invoices - Total Refunds - (Receipts + Deposits) - Total JEs
 ```
+
+### Total JEs (Manual JE)
+
+**Field:** `totalManualJEs` (UI label **Total JEs**)
+**Helper:** `sumCustomerManualJeNet({ customerId, invoiceNumbers })` in `psback/services/manualJeAdjustment.js`
+
+Sums **live Manual JE** rows against the customer's **receivable**, by combining two match paths (a row matching both is counted **once**):
+1. `analysis_code1` = one of the customer's **invoice numbers**, OR
+2. `gl_entity_id` = the **customer** AND the line is on the **Trade Debtors** account (`key_account = 151110`).
+
+**Amount = NET (credit − debit)** in PKR — a credit on Trade Debtors lowers what the customer owes, a debit raises it. The value is **subtracted** from Current Outstanding.
+
+**Live filter:** batch `batch_type = 'Manual JE'`, batch `status ≠ Void`, and the row description does **not** start with `VOID REVERSAL -` (so a voided Manual JE nets to zero).
+
+> **Why this changed (2026-06-18):** previously Total JEs matched **only** by invoice number (`sumManualJeAdjustmentForMany`, debit+credit). Manual JEs posted directly to a customer's Trade Debtors account with **no invoice number** (e.g. "amount transferred to airline") were missed — e.g. customer 2638 had 32,681,526 in such credits showing as 0. The match now also covers `gl_entity_id` + Trade Debtors, deduped, using the net (credit − debit) sign.
 
 ---
 
