@@ -116,6 +116,37 @@ larger fonts than Daily Sale Report for easier reading:
 > Note: the report-number prefix is `DSRR` (not `DSR`) because `DSR` is already used
 > internally by the Daily Settlement report. The on-screen name is still **DSR**.
 
+### Multi-supplier invoices: per-supplier split (DSR-specific)
+
+When one invoice has more than one supplier/XO, the report splits it into a primary row
+plus one secondary row per extra XO. DSR now shows **each supplier row fully self-contained**
+(2026-06-19):
+
+1. **Invoice No., Inv. Date, PNR, Status and Client Name** are shown on every row (primary and
+   secondary), so each supplier row is fully labelled. (Only the hidden S-ID and the Pax column
+   are left blank on secondary rows.)
+2. **Customer side (Receivable) is split per supplier**: each XO row carries the sale of the
+   service(s) tied to that XO, instead of piling the whole invoice's sales onto the first row.
+3. **Profit/Loss is split per supplier row** too (that row's sale − that row's cost).
+4. Services that have a sale but **no supplier XO** are folded into the **primary** row, so
+   nothing is dropped. **Grand totals (sales / cost / profit) are unchanged** — amounts are
+   only moved to their own row, never duplicated.
+
+Example — invoice `KHIN00000176` (Air Blue + Hashmat):
+
+| Row | Supplier | Total Sales | Total Cost | P/L |
+|-----|----------|------------:|-----------:|----:|
+| 1 | Air Blue | 122,000 | 110,279 | 11,721 |
+| 2 | Hashmat (Umrah) | 78,000 | 70,000 | 8,000 |
+| | **Invoice total** | **200,000** | **180,279** | **19,721** |
+
+Changed in `dsr.report.controller.js` (the per-invoice `finalRows` loop now sums receivable
+and profit per XO group, orphan no-XO services fold into the primary row; the Excel `dataRow`
+drops the `sec ? '' :` guards on the receivable/Total-Sales/Profit columns) and
+`dsr-report.ejs` (those same cells render for all rows). The **Daily Sale Report** keeps its
+old behaviour (all receivable + profit on the first row, secondary rows blank) — this is now a
+DSR-only difference.
+
 ---
 
 ## Files

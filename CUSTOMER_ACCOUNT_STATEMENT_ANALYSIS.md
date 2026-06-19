@@ -696,14 +696,20 @@ Only receipts with GL account payments totaling > 0 are displayed:
 
 ---
 
-## 10.0.7 Hajj/Umrah Word in Remarks (2026-06-17)
+## 10.0.7 Hajj/Umrah Word + Miscellaneous Description in Remarks (2026-06-17)
 
-For **General/Other Bookings**, the **Remarks** column shows the word **`Umrah`** or **`Hajj`** when the service type is Umrah/Hajj (read from `service.service_type.type`); all other service types keep a blank Remarks. This matches the Supplier Account Statement and needs no extra table joins.
-- The General booking row sets `remarks = (type === 'umrah' || type === 'hajj') ? service.service_type.type : ""`.
+For **General/Other Bookings**, the **Remarks** column shows:
+- the word **`Umrah`** or **`Hajj`** when the service type is Umrah/Hajj (read from `service.service_type.type`); and
+- the **service description** (`service_miscellaneous.description`, e.g. "extra luggage") when the service type is **Miscellaneous** (2026-06-19);
+- all other service types keep a blank Remarks.
+
+Details:
+- The General booking row sets `remarks = (type === 'umrah' || type === 'hajj') ? service.service_type.type : (type === 'miscellaneous' ? service.service_miscellaneous?.description : "")`.
+- The customer orders query now includes `service_miscellaneous` (attribute `description` only) so the value is available.
 - Display-only — no effect on amounts, Total Sales, or Net Balance. PDF and Excel both already render the Remarks column.
-- (Earlier this briefly used the Umrah/Hajj `package_name`, but that was simplified to the type word — Hajj records often have a blank package name.)
+- (Umrah/Hajj briefly used `package_name`, simplified to the type word — Hajj records often have a blank package name.)
 
-**Files Modified**: `psback/controllers/report.controller.js` (`getCustomerAccountStatementReport`) — `remarks` value on General bookings.
+**Files Modified**: `psback/controllers/report.controller.js` (`getCustomerAccountStatementReport`) — `service_miscellaneous` include + `remarks` value on General bookings.
 
 ## 10.0.8 Per-Passenger Serial Number (S.NO) on Ticket Bookings (2026-06-17)
 

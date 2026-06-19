@@ -1,6 +1,6 @@
 # Cash and Bank Balance Report - Technical Documentation
 
-**Version**: 1.0
+**Version**: 1.1
 **Date**: March 2026
 **Author**: System Analysis
 **Status**: Stable
@@ -55,10 +55,12 @@ Data is grouped by chart of account. Each account group contains:
 1. **Account Header Row**: Account number and description (e.g., "1001-Cash in Hand")
 2. **AR Deposits Section**: All customer deposits received into the account
 3. **AR Deposits Total Row**: Sum of deposit amounts
-4. **Payments Section**: All payments linked to the account. Outflows (Supplier, Expense, Credit Note, and internal transfer-out `account_from`) show in **Paid Amount**. Internal transfer-in legs (`transfer_type = 'account_to'`, money received into this account) stay listed here but show their amount in **Received Amount**, with Paid Amount blank.
-5. **Payments Total Row**: Paid Amount = sum of outflow payments (excludes transfer-ins); Received Amount = sum of transfer-in legs
-6. **Account Balance Row**: Net balance = (Total AR Deposits + transfer-ins received) − Total Payments (highlighted in yellow in Excel)
-7. **Summary Section** (when date filter is applied):
+4. **Internal Transfer Section**: All internal-transfer legs touching this account, shown as their own section (between AR Deposits and Payments). Transfer-in legs (`transfer_type = 'account_to'`, money received into this account) show in **Received Amount**; transfer-out legs (`transfer_type = 'account_from'`, money sent out of this account) show in **Paid Amount**. In this section the **Payee/Payer No.** column shows the section account's own **bank account number** (`bank_accounts.account_number`); cash accounts with no bank account leave it blank. The **Payee/Payer Name** column shows the transfer route **"From &lt;source bank&gt; To &lt;destination bank&gt;"** (each side's `chart_of_account.description`) — the same text on both the sending and receiving sides.
+5. **Internal Transfer Total Row**: Received Amount = sum of transfer-in legs; Paid Amount = sum of transfer-out legs
+6. **Payments Section**: Only normal outflows (Supplier, Expense, Credit Note). Internal transfers are no longer listed here — they live in the Internal Transfer section above.
+7. **Payments Total Row**: Paid Amount = sum of outflow payments
+8. **Account Balance Row**: Net balance = (Total AR Deposits + transfer-ins received) − transfer-outs − Total Payments (highlighted in yellow in Excel). Rendered after all three sections, so it shows even for accounts whose only outflows were internal transfers.
+9. **Summary Section** (when date filter is applied):
    - **Previous Balance**: (deposits + transfer-ins) minus outflow payments before the filter start date (shown with date = 1 day before start)
    - **Period Activity**: (deposits + transfer-ins received) minus payments within the filtered period
    - **Fund Available**: Previous Balance + Period Activity (highlighted in green)
@@ -256,6 +258,31 @@ Payments are classified by type based on linked entities:
 ---
 
 ## Recent Updates
+
+### Internal Transfer moved to its own section (2026-06-19)
+
+**Request**: Internal-transfer rows were mixed inside the Payments section. They should sit in
+their own **Internal Transfer** section, placed after AR Deposits and before Payments — same
+shape as the other sections (rows + total).
+
+**Change** (`getCashAccountBalanceReport` + `cash-account-balance.ejs`):
+1. Both transfer legs are now detected: `account_to` (money in → Received Amount) and
+   `account_from` (money out → Paid Amount).
+2. Those rows are pulled out of `payments[]` into a new `internal_transfers[]` list with its own
+   totals (`total_internal_transfers.received` / `.amount` / `.base_amount`).
+3. The Payments section now holds only normal supplier/expense/credit-note outflows.
+4. **Account Balance row** was moved to render after all three sections (PDF and Excel), so an
+   account whose only outflows were transfers still shows its balance row.
+5. In the Internal Transfer section, the **Payee/Payer No.** column shows the section account's
+   own bank account number (looked up from `bank_accounts` by `chart_of_account_id`, scoped by
+   company). Cash accounts with no bank account row leave it blank. The **Payee/Payer Name**
+   column shows the route "From &lt;source bank&gt; To &lt;destination bank&gt;", resolved from
+   both transfer legs by `payment_settlement_id` (each side's `chart_of_account.description`).
+6. All balance numbers are unchanged — the calculation only moved its terms around:
+   `balance = deposits + transfers_in − transfers_out − payments` (identical net to before).
+   Period Activity / Previous Balance / Fund Available are unaffected.
+
+**Scope**: Both PDF and Excel outputs. Affects every account that has internal transfers.
 
 ### Internal transfer-ins shown as Received, not Paid (2026-06-16)
 
