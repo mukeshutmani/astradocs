@@ -122,9 +122,10 @@ When one invoice has more than one supplier/XO, the report splits it into a prim
 plus one secondary row per extra XO. DSR now shows **each supplier row fully self-contained**
 (2026-06-19):
 
-1. **Invoice No., Inv. Date, PNR, Status and Client Name** are shown on every row (primary and
-   secondary), so each supplier row is fully labelled. (Only the hidden S-ID and the Pax column
-   are left blank on secondary rows.)
+1. **Invoice No., Inv. Date, PNR, Status, Client Name and Pax** are shown on every row (primary
+   and secondary), so each supplier row is fully labelled. Pax repeats the invoice's full
+   passenger list on each row (a name label, so repeating it changes no totals). Only the hidden
+   S-ID column is left blank on secondary rows.
 2. **Customer side (Receivable) is split per supplier**: each XO row carries the sale of the
    service(s) tied to that XO, instead of piling the whole invoice's sales onto the first row.
 3. **Profit/Loss is split per supplier row** too (that row's sale − that row's cost).

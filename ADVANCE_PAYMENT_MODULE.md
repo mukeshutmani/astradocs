@@ -41,6 +41,20 @@ On create (`createSupplierDeposit`):
    PKR→base rate, which is why "USD 10,000" looked wrong. Revisit labelling Available
    Amount with the **base** currency once real foreign advances exist.
 
+## 3a. Bank account selection (Cheque / Bank Transfer / Card)
+1. The bank dropdowns (pay types 2, 6, 12 and the Card block 3/7) list **bank
+   accounts**, not banks: each option shows `bank name (account_number)`.
+2. One bank can own **many accounts** (e.g. five Meezan accounts all under bank id
+   42). Each option's value is therefore the **bank account id** (`account.id`,
+   unique), not the shared `bank.id`.
+3. On select, the chosen account is looked up by `account.id` and the form stores its
+   `bank_id`, its real `account_number`, and its `chart_of_account_id`; the dropdown's
+   selected value is tracked via `bank_account_id`.
+4. **History / why**: options previously used `account.bank.id` as the value and looked
+   the account up by `bank.id`. With multiple accounts per bank that lookup always
+   matched the **first** account, so picking the 2nd Meezan account printed the 1st
+   account's number on the document. Fixed by keying selection on the unique account id.
+
 ## 4. Currency selection (base-currency aware)
 1. The company **base currency** is derived from the loaded currency list — the
    `to_currency` of a configured rate record (e.g. `EUR → USD` ⇒ base **USD**),
