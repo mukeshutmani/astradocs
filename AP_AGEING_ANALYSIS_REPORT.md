@@ -1,9 +1,9 @@
 # AP Ageing Analysis Report - Technical Documentation
 
-**Version**: 1.2
-**Date**: 2026-06-11
+**Version**: 1.8
+**Date**: 2026-06-22
 **Author**: System Analysis
-**Status**: Stable — Single supplier total row + end-of-report supplier summary with grand total (v1.2); Currency Conversion Fix (v1.1)
+**Status**: Stable — Opening debit notes now show, NULL branch_id matched by supplier_id (v1.8); Per-company exchange rate + cost's booked rate so report matches the document (v1.7); Single supplier total row + end-of-report supplier summary with grand total (v1.2); Currency Conversion Fix (v1.1)
 
 ---
 
@@ -140,9 +140,15 @@ totalCostLocal = costPerUnit × quantity
 
 ```
 currencyCode = currency_codes[cost.currency] → e.g., "SAR", "USD"
-exchangeRate = currencies[currencyCode → PKR] → e.g., 77.10 for SAR
+exchangeRate = cost.exchange_rate (the rate the cost was booked at)
+             → fallback: currencies[currencyCode → PKR] for THIS company only
 totalCostPKR = totalCostLocal × exchangeRate
 ```
+
+The report prefers the **rate stored on the cost** (`cost.exchange_rate`) so the PKR
+figure matches the costing document and its journal entry. The live `currencies`
+lookup is only a fallback for costs with no stored rate, and is **scoped to the
+logged-in company** (`company_code`) so it can never pick another company's rate.
 
 For PKR costs, exchange rate = 1 (no conversion needed).
 
@@ -180,10 +186,13 @@ Multiple cost line items under the same XO document number are grouped together.
 
 ### Debit Notes
 
-- Queried by `supplier_name` match and `doc_status = 'Printed'`
-- Filtered by company branch IDs to avoid cross-company data
+- `doc_status = 'Printed'`, then matched company-safely via an OR:
+  - **Normal DNs**: `supplier_name` match **AND** `branch_id` in the company's branches.
+  - **Opening DNs**: `supplier_id = this supplier's id`. Opening DNs are imported with
+    `branch_id = NULL` (so the branch filter alone drops them) but carry a `supplier_id`,
+    which is inherently this company's supplier — no cross-company leak.
 - Amount is **negated** (reduces outstanding)
-- Order number fetched from linked refund record
+- Order number fetched from linked refund record (blank for opening DNs, which have none)
 
 ### Supplier Deposits (Advance Payments)
 
@@ -289,6 +298,63 @@ After the last supplier, both PDF and Excel show a single **Grand Total** row (s
 ---
 
 ## Known Issues & Fixes
+
+### Fix: Opening debit notes now show (NULL branch_id) (v1.8, 2026-06-22)
+
+**Problem**: Opening debit notes (imported supplier opening balances) never appeared on the
+report, even though they are `Printed` and belong to the company.
+
+**Root cause**: Opening and normal debit notes are stored with mutually exclusive anchors:
+- **Normal** DNs always have a `branch_id` (and `supplier_id` is NULL).
+- **Opening** DNs have `branch_id = NULL` (and carry a `supplier_id`).
+
+The debit-note query required `branch_id IN (company branches)`. `NULL IN (...)` is never
+true, so all opening DNs were filtered out. (Matching opening DNs by `supplier_name` is also
+unreliable — e.g. a DN name `"TAHIR TESTING SUPPLIER"` vs supplier `"TAHIR TESTING SUPPLIER "`
+with a trailing space.)
+
+**Fix** (`getAPAgeingAnalysisReport`): the debit-note query now uses an OR —
+`supplier_name + branch_id IN company branches` (normal DNs) **OR** `supplier_id = supplier.id`
+(opening DNs). `supplier.id` is this company's supplier, so it stays company-scoped with no
+leak, and no row can match both sides (normal DNs have no `supplier_id`, opening DNs have no
+`branch_id`).
+
+**Files Changed**:
+- `psback/controllers/report.controller.js` — `getAPAgeingAnalysisReport`,
+  `getAPAgeingAnalysisSummaryReport`, `getAPAgeingAnalysisDetailReport` (debit-note query)
+
+**Scope**: The opening-DN fix was applied to all three variants (Report, Summary, Detail).
+The **exchange-rate + manual-JE** fix (v1.7) is now in **Report and Summary**; the **Detail**
+report still keeps the old unscoped, live-rate lookup and doesn't subtract manual JE.
+
+### Fix: Per-company rate + booked rate so report matches document (v1.7, 2026-06-22)
+
+**Problem**: For company `9876`, XO `TTXO00000023` showed **7,928 PKR** outstanding on the
+report, but the costing document showed **10,000 PKR**.
+
+**Root causes** (two faults in the currency conversion):
+1. **Wrong company's rate**: the exchange-rate prefetch ran
+   `SELECT ... FROM currencies WHERE to_currency='PKR' ORDER BY id DESC` with **no
+   `company_code` filter**, keeping the highest-id row per currency. For AED that was
+   company `1008`'s rate **75.83**, not 9876's 76.45.
+2. **Wrong rate basis**: it re-converted at a live `currencies` rate instead of the rate the
+   cost was actually booked at (`cost.exchange_rate`). The cost was 800 AED booked at
+   **78.42** → 62,736 PKR; the report used 75.83 → 60,664.
+   - Report: 800 × 75.83 = 60,664 − 17,236 (payment) − 35,500 (Manual JE) = **7,928**.
+   - Document: 800 × 78.42 = 62,736 − 52,736 = **10,000**.
+
+**Fix** (`getAPAgeingAnalysisReport`):
+1. The fallback rate query now filters `AND company_code = :companyCode`, so it can only ever
+   use the logged-in company's rates.
+2. Each cost now converts using its **own stored `cost.exchange_rate`** (the booked rate);
+   the company-scoped live rate is used only when the cost has no stored rate. PKR costs stay
+   at rate 1. `TTXO00000023` now reads **10,000**, matching the document.
+
+**Files Changed**:
+- `psback/controllers/report.controller.js` — `getAPAgeingAnalysisReport` (rate prefetch query + per-cost conversion)
+
+**Scope**: Report variant only. The **Summary** and **Detail** functions still use the old
+unscoped, live-rate pattern (unchanged).
 
 ### Fix: Base Currency + Voided Settlements (v1.3, 2026-06-17)
 

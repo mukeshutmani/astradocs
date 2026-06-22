@@ -26,7 +26,10 @@
    company's saved exchange rate, then **outstanding = cost amount − settled**.
    Fully-settled costs are skipped.
 3. **Debit notes** and **advance payments** subtract from the payable (shown negative).
-   Advance uses the deposit's `current_amount` (already in base currency).
+   Advance uses the deposit's `current_amount` (already in base currency). Debit notes are
+   matched company-safely: normal DNs by `supplier_name` + company branches, **opening DNs**
+   by `supplier_id` (opening DNs have `branch_id = NULL`, so the branch filter alone dropped
+   them — fixed 2026-06-22).
 4. **Due date** comes from the supplier's credit terms (`calculateDueDate`); the bucket is
    chosen by `daysOverdue = asOfDate − dueDate`.
 

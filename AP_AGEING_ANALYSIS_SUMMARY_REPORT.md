@@ -1,9 +1,9 @@
 # AP Ageing Analysis Summary Report - Technical Documentation
 
-**Version**: 1.1
-**Date**: 2026-06-17
+**Version**: 1.3
+**Date**: 2026-06-22
 **Author**: System Analysis
-**Status**: Stable — base-currency + voided-settlement fix and 2-decimal rounding (v1.1); aligned with the AP Ageing Analysis Report
+**Status**: Stable — Manual JE + booked/company-scoped rate so Summary reconciles with the Report (v1.3); Opening debit notes now show, matched by supplier_id (v1.2); base-currency + voided-settlement fix and 2-decimal rounding (v1.1)
 
 ---
 
@@ -160,8 +160,9 @@ Average Days (per supplier) = round( Σ daysOverdue / number of costs )
 
 ### Debit Notes & Supplier Deposits
 
-- **Debit notes**: matched by `supplier_name`, `doc_status = Printed`, company branches;
-  amount **negated**.
+- **Debit notes**: `doc_status IN (Printed, Partially Paid)`, then company-safe OR —
+  normal DNs by `supplier_name` + company branches, **opening DNs** by `supplier_id`
+  (they have `branch_id = NULL`); amount **negated**.
 - **Supplier deposits (advances)**: `supplier_id`, status Printed/Partially Paid,
   `current_amount > 0`; `current_amount` (already base currency) **negated**.
 
@@ -169,12 +170,15 @@ Average Days (per supplier) = round( Σ daysOverdue / number of costs )
 
 ## Currency Conversion
 
-1. The company **base currency** is the `to_currency` configured for that company in
-   `currencies` (e.g. company `1010` = `EUR → USD` ⇒ base **USD**); default `PKR`.
-2. Exchange rates are pre-fetched **scoped to this company and its base currency**:
-   `SELECT from_currency, exchange_rate FROM currencies WHERE to_currency = :base AND
-   company_code = :company`.
-3. The summary shows **no per-amount currency label** (column is "Current", total row is
+1. Each cost converts to PKR using the **rate it was booked at** (`cost.exchange_rate`),
+   so the figure matches the costing document and the line-item Report.
+2. Fallback only (cost has no stored rate): the live `currencies` rate, **scoped to this
+   company**: `SELECT from_currency, exchange_rate FROM currencies WHERE to_currency = 'PKR'
+   AND company_code = :company`. PKR costs use rate 1.
+3. **Manual JE settlements** are subtracted per XO (`sumManualJeAdjustment`, live batches only)
+   and **voided** payment settlements are ignored — identical to the Report, so the two
+   reconcile.
+4. The summary shows **no per-amount currency label** (column is "Current", total row is
    "Total") — so there is nothing to relabel (unlike the main report's "Supplier Total").
 
 ---
@@ -221,6 +225,53 @@ A bold **Total** row sums every amount column across all suppliers.
 ---
 
 ## Known Issues & Fixes
+
+### Fix: Manual JE + booked/company-scoped rate — Summary reconciles with Report (v1.3, 2026-06-22)
+
+**Problem**: The Summary overstated the payable vs the line-item Report. Example —
+Q & K Supplier (company `9876`): Report Total **122,842.88**, Summary **169,450.88**
+(31–60 bucket 197,120 vs 243,808). Current and 1–30 matched, but the buckets containing
+foreign-currency / manual-JE-settled XOs didn't.
+
+**Root causes** (the Summary lacked two fixes the Report already had):
+1. **Manual JE not subtracted** — XOs settled by Manual Journal Entry kept their full amount
+   (e.g. `TTXO00000023` settled 35,500 by Manual JE).
+2. **Wrong exchange rate** — the rate prefetch was `to_currency='PKR' ORDER BY id DESC` with
+   no company filter (picked another company's rate) and used the live rate, not the cost's
+   booked rate.
+
+**Fix** (`getAPAgeingAnalysisSummaryReport`):
+1. Rate prefetch now filters `AND company_code = :companyCode`.
+2. Costs convert at their stored `cost.exchange_rate` (company-scoped live rate as fallback);
+   PKR costs use 1.
+3. Costs are now **grouped by XO** (added the costing `document` include), and
+   `sumManualJeAdjustment(xo)` is subtracted once per XO — mirroring the Report.
+4. Voided payment settlements are excluded (added the `payment_settlement` include).
+
+After this, the Summary reconciles with the Report (Q & K → **122,842.88**).
+
+**Files Changed**:
+- `psback/controllers/report.controller.js` — `getAPAgeingAnalysisSummaryReport`
+  (rate prefetch, cost includes, XO grouping + booked-rate + manual-JE + void exclusion)
+
+**Scope**: Summary variant. The **Detail** report still lacks the manual-JE + booked-rate fix.
+
+### Fix: Opening debit notes now show (NULL branch_id) (v1.2, 2026-06-22)
+
+**Problem**: Opening debit notes (imported supplier opening balances) never appeared, because
+they are stored with `branch_id = NULL` while the query required `branch_id IN (company
+branches)` — and `NULL IN (...)` is never true.
+
+**Fix** (`getAPAgeingAnalysisSummaryReport`): the debit-note query now uses an OR — normal DNs
+by `supplier_name` + company branches, opening DNs by `supplier_id = supplier.id` (this
+company's supplier, so no cross-company leak; opening DNs have no `branch_id`, normal DNs have
+no `supplier_id`, so no row matches both). Mirrors the Report variant.
+
+**Files Changed**:
+- `psback/controllers/report.controller.js` — `getAPAgeingAnalysisSummaryReport` (debit-note query)
+
+**Update**: the exchange-rate limitation noted here was fixed in **v1.3** (below) — the rate is
+now company-scoped and uses the cost's booked rate, and Manual JE is subtracted.
 
 ### Fix: Base Currency + Voided Settlements + 2-decimal rounding (v1.1, 2026-06-17)
 

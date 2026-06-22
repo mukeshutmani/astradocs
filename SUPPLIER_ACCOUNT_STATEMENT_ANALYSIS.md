@@ -1132,7 +1132,27 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 **Files Modified**:
 - `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — General build now stores per-item `paxRows`; `expandGeneralRows` emits them without re-splitting.
 
-**Known same-pattern risk (not changed)**: the **Ticket / Refund-Ticket** sections (16.11) still split the merged XO total evenly across all passengers via `expandPaxRows`. For an XO with multiple **ticket** cost items at different rates, the same per-item issue could appear there — left as-is since this report was about General/Umrah; revisit if it surfaces for tickets.
+**Known same-pattern risk (FIXED in 16.16, 2026-06-20)**: the Ticket section used to merge all of an XO's air cost items into one entry and then split the pooled total evenly across all passengers, so an XO with multiple ticket items at different rates showed every passenger the same averaged amount. Fixed by building Ticket Bookings **per cost item** — see section 16.16.
+
+### 16.16 Ticket Bookings Split Per Cost Item, Not Per Whole XO (2026-06-20)
+
+**Problem**: One XO can contain **multiple air cost items at different rates** (e.g. KHXO00000249 = 4 pax @ 61,881 + 2 pax @ 53,851, total 355,226). The Ticket Bookings section pooled all of an XO's air items into one entry (6 pax, total 355,226) and divided **equally** → every passenger showed 59,204.33, which is wrong. The 4-pax item should be 61,881 each and the 2-pax item 53,851 each — exactly as the XO/Cost document shows them.
+
+**Root cause**: each air cost item is its own `service`/`cost` row but they share the XO `document_number`. The Ticket build merged them via `ticketBookingsMap` (concatenated all passengers/ticket numbers, summed all money), then `expandPaxRows` split the merged XO total across **all** passengers.
+
+**Fix** (same idea as 16.15 for General, but simpler because Refund-Ticket already did it right):
+1. The Ticket build now pushes **one row-group per air cost item** straight into `ticketBookings` (no XO merge) — the same shape Refund-Ticket already used.
+2. `expandPaxRows` then splits **each item's** money across **its own** passengers (cent-accurate) and restarts S.No at 1 per item. So XO 249 shows 1–4 (item 1) then 1–2 (item 2).
+3. The `ticketBookingsMap` and its map→array conversion were removed (no longer used).
+
+**Refund Ticket Bookings**: already pushes one entry **per refund record** (never merged by XO), so it was already item-wise — no code change needed. Both Ticket and Refund-Ticket now produce correct per-item per-passenger rows through the same `expandPaxRows`.
+
+**Why totals stay correct**: section totals (PDF and Excel) sum every row; the cent-accurate split sums back to each item's total, and items sum to the XO total. **Add Sale Invoices** / Net Balance are computed from the item `totalAmount` independently of the row split, so reconciliation is unchanged.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — Ticket build pushes per cost item; removed `ticketBookingsMap` declaration and its conversion loop.
+
+**Scope**: Ticket Bookings + Refund Ticket Bookings, supplier function only. Hotel/General and the Customer Account Statement unchanged.
 
 ### 16.4 Summary of Changes
 
@@ -1170,5 +1190,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-06-18 — Section 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
+**Last Updated**: 2026-06-20 — Section 16.16 (Ticket Bookings split per cost item, not per whole XO; Refund-Ticket already per-item); 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
 
