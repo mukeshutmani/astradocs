@@ -221,6 +221,10 @@ When `adjustmentDateMode = false`:
 
 ## 7. Output Formats
 
+### Filter retention & inline preview (frontend)
+- Selected filters are retained after generating (module-level `cachedFilter` in `SupplierPositionReport.jsx`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER`.
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 ### PDF
 - **Template**: `psback/views/pages/reports/report2.ejs` (shared)
 - **Page Size**: A3 Landscape, 5mm margins

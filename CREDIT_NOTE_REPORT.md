@@ -128,6 +128,7 @@ Opening credit notes imported via **Opening CN Import** (`is_opening = 1`) have 
 - **Filters in UI**: Date, Branch, Customer, Status (dropdown options: `Printed`, `Settled`, `Partially Settled`).
 - **Generate buttons**: PDF and Excel (via dropdown).
 - Report history section was removed per UX request — only the filter form remains.
+- **Filter retention & inline preview**: selected filters are retained after generating (module-level `cachedFilter`; refresh resets to `DEFAULT_FILTER`). PDF renders inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button that opens the full PDF in a new tab; no navigation away from the page. Excel still downloads and clears the inline PDF.
 
 ---
 

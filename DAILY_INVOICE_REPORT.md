@@ -143,6 +143,11 @@ The footer row sums the PKR-converted numeric columns (`gross`, `discount`, `sal
 
 ## Output
 
+### Filter retention & inline preview (frontend)
+
+- Selected filters are retained after generating (module-level `cachedFilter` in `DailyInvoiceReport.jsx`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER`.
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 ### PDF
 
 Rendered through a dedicated template `views/pages/reports/daily-invoice-report.ejs` and converted with `createPdf(html, true)` — **A4 Landscape**. Text columns (Customer Name, Invoice Number, Status, Date, Currency, TCID) are **left-aligned**; amount columns (Gross, Discount, Sales, Cost, SST, Profit/Loss, Margin) are right-aligned. Uploaded to MinIO under `TPDI<timestamp>.pdf`.

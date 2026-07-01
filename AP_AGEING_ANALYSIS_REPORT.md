@@ -59,8 +59,12 @@ React Component Structure:
 │   └── Branch Filter (isNotBlank, isBlank, isEqual, between)
 │       └── Combobox (client-side, pre-loaded up to 1000 branches)
 ├── Generate Button (dropdown: PDF / Excel)
-└── Report Viewer (navigates to /reports/:report_number)
+└── Report Preview (PDF rendered inline below the filters + Preview button)
 ```
+
+**Filter retention & inline preview**:
+- Selected filters are retained after generating (module-level `cachedFilter`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER` (with `asOfDate` recomputed to today on mount).
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
 
 ### Backend Controller
 

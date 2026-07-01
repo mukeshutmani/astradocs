@@ -65,6 +65,7 @@ Excel and PDF use the **same layout and columns**.
 ### Frontend
 - **Page**: `psfront/src/pages/Report/InvoiceXoOpeningReport.jsx`.
 - **API**: `getInvoiceXoOpeningReport` in `psfront/src/api/report.js`.
+- **Filter retention & inline preview**: selected filters are retained after generating (module-level `cachedFilter`; refresh resets to `DEFAULT_FILTER`). PDF renders inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab); no navigation away from the page. Excel still downloads and clears the inline PDF.
 - **Route**: `reports/invoiceXoOpeningReport` in `App.jsx`.
 - **Sidebar**: entry under the **History** group in `psfront/src/pages/Report/Report.jsx`, gated by the `Invoice-Xo-Opening-Report` permission.
 

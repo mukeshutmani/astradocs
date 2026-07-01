@@ -36,6 +36,10 @@ The Daily Sale Report provides a comprehensive daily view of sales and costs bro
 
 **Output**: PDF or Excel (landscape orientation)
 
+**Filter retention & inline preview**:
+- Selected filters are retained after generating (module-level `cachedFilter`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER` (with `startDate`/`endDate` recomputed to today on mount).
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 ### Backend Controller
 
 **File**: `psback/controllers/report.controller.js`

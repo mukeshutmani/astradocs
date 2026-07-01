@@ -27,6 +27,10 @@ The Bank Activity Report shows all journal entry transactions associated with ba
 
 **Output**: PDF or Excel
 
+**Filter retention & inline preview**:
+- Selected filters are retained after generating (module-level `cachedFilter`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER`.
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 ### Backend Controller
 
 **File**: `psback/controllers/report.controller.js`

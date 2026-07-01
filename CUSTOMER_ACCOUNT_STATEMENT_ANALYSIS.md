@@ -637,6 +637,7 @@ Provides shared calculation functions:
 - Report history table with pagination
 - Download functionality for Excel
 - Report viewing for PDF
+- Selected filters are retained after generating a report (module-level `cachedFilter`), so returning to the page keeps prior selections; a full page refresh resets all filters to `DEFAULT_FILTER`.
 
 **API Call**:
 ```javascript
@@ -645,8 +646,8 @@ Timeout: 300000ms (5 minutes)
 ```
 
 **Report Display**:
-- PDF: Navigates to `/reports/{report_number}?type=report`
-- Excel: Downloads file with format `Customer_Account_Statement_{report_number}.xlsx`
+- PDF: Rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`); the filters stay visible so another filter can be added and the report regenerated in place. No navigation away from the page.
+- Excel: Downloads file with format `Customer_Account_Statement_{report_number}.xlsx` (clears any inline PDF preview)
 
 ---
 

@@ -16,6 +16,8 @@ so it can evolve on its own **without affecting the Daily Sale Report**.
 > XO status rules, date-filter logic, currency conversion, service-type mapping, summary
 > table, footer, etc.) see **`docs/DAILY_SALE_REPORT.md`** — DSR behaves identically.
 
+**Filter retention & inline preview (frontend, `DSR.jsx`)**: like the Daily Sale Report, selected filters are retained after generating (module-level `cachedFilter`; refresh resets to `DEFAULT_FILTER` with `startDate`/`endDate` recomputed to today). PDF renders inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button that opens the full PDF in a new tab; Excel still downloads and clears the inline PDF.
+
 ---
 
 ## What is different from Daily Sale Report

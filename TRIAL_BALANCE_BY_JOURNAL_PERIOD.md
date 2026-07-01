@@ -30,6 +30,10 @@ Create a new Trial Balance report that allows selection of a journal period (fro
   - Both fields required for generation
   - Pass both periods to backend API
 
+#### C. Filter retention & inline preview
+- Selected filters are retained after generating (module-level `cachedFilter` in `TrailBalanceByJournalPeriod.jsx`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER`.
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 ### 2. Backend Implementation
 
 #### A. Add New Route

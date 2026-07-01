@@ -21,6 +21,10 @@ The Balance Sheet report shows the financial position of the company at a specif
 | Branch | No | All Branches (default) or Specific Branch |
 | Sub A/C No. | No | Filter by sub-account (e.g., BMC, BTT, ETB) |
 
+## Filter Retention & Inline Preview
+- Selected filters are retained after generating (module-level `cachedFilter` in `BalanceSheet.jsx`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER`.
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 ## Report Columns
 
 | Column | Description |

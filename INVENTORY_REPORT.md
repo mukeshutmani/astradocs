@@ -89,6 +89,10 @@ It answers the question: *"What tickets have been issued (inventory) and what do
 
 **Output**: PDF or Excel (user picks from the Generate dropdown).
 
+**Filter retention & inline preview**:
+- Selected filters are retained after generating (module-level `cachedFilter`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER`.
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 **History table**: Lists previously generated Inventory Reports from the `report` table where `report_type = 'inventory-report'`, with per-row PDF/Excel download links.
 
 ### Frontend API

@@ -110,6 +110,10 @@ Rows are broken down **per branch** and grouped by key account. Rollup (parent) 
 
 ## Output
 
+### Filter retention & inline preview (frontend)
+1. Selected filters are retained after generating (module-level `cachedFilter` in `TrailBalance.jsx`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER`.
+2. PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 ### PDF
 1. Rendered by `psback/views/pages/reports/trial-balance.ejs`.
 2. Uploaded to S3/MinIO via `uploadFile()`; a signed link is returned.

@@ -12,6 +12,10 @@ The Supplier Account Statement report is a comprehensive system that tracks supp
 - **API Integration**: `/mnt/c/Codes/Powersuite/psfront/src/api/report.js`
   - Function: `getSupplierAccountStatementReport(filterData)`
 
+**Filter retention & inline preview**:
+- Selected filters are retained after generating (module-level `cachedFilter`); returning to the page keeps prior selections. A full page refresh resets to `DEFAULT_FILTER`.
+- PDF is rendered inline below the filters (iframe → `{VITE_API_URL}/document/view/{report_number}`) with a **Preview** button (opens the full PDF in a new tab). No navigation away from the page. Excel still downloads and clears the inline PDF.
+
 ### Backend Files
 - **Route Handler**: `/mnt/c/Codes/Powersuite/psback/routes/report.route.js`
   - Endpoint: `POST /report/getSupplierAccountStatementReport`
