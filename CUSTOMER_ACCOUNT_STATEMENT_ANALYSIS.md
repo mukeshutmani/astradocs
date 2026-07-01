@@ -71,6 +71,12 @@ The Customer Account Statement Report:
    - **T.Fee folds into Taxes when hidden (2026-06-17)**: when **T.Fee** (`transactionFee`) is hidden, its amount is added into the **Taxes** column for each Ticket Booking row (e.g. Taxes 200 + T.Fee 50 → Taxes shows 250). This is display-only — **Net**, **Total Sales**, and **Net Balance** are unchanged. Applied at the ticket row build in `getCustomerAccountStatementReport` (`taxes = (taxesPerPassenger + (hidden ? transactionFeePerPassenger : 0)) * exchangeRate`), so both PDF and Excel (including the Excel Taxes total) reflect it. Only affects the Ticket Bookings table (the Refund-Ticket table is not populated in this report).
    - UI: the trigger is an **auto-width** dropdown button (`w-auto`, `min-w-[160px]`, `max-w-full`) that grows with the number of selected labels and stays within the card; built with `DropdownMenuCheckboxItem` (menu stays open on toggle via `onSelect` preventDefault).
 
+7. **Hide Opening Balance** — NEW (2026-06-30)
+   - Checkbox labelled **Opening Balance** (`hideOpeningBalance`, default OFF), placed to the **right of the Hide Column** dropdown. Available for **all companies**.
+   - When ON: the **Opening Balance B/F** line is removed from the Summary (PDF + Excel) **and** removed from the **Net Balance** math (in the controller `openingBalance` is set to `0` before the Net Balance is computed), so the visible summary lines still reconcile to the Net Balance.
+   - When OFF (default): report unchanged.
+   - Only **Opening Balance B/F** is affected — the separate **Add Opening Invoices** line (in-period imported opening invoices) is untouched.
+
 5. **Include Raised Invoices** — NEW
    - Checkbox: `includeRaised` (default OFF)
    - When OFF (default): only `Printed`, `Settled`, `Partially Settled` invoices appear (unchanged behaviour)
@@ -92,6 +98,7 @@ The Customer Account Statement Report:
   adjustmentDateMode: boolean,       // When true, use adjustment_date for posted docs
   includeRaised: boolean,            // When true, also include un-printed "Raised" invoices
   hideColumns: string[],             // Columns to hide on Ticket tables: any of 'discount','rebate','transactionFee','sst' (display only)
+  hideOpeningBalance: boolean,       // When true, hide Opening Balance B/F and remove it from Net Balance
   type: "pdf" | "excel"              // Output format
 }
 ```
@@ -701,10 +708,12 @@ Only receipts with GL account payments totaling > 0 are displayed:
 For **General/Other Bookings**, the **Remarks** column shows:
 - the word **`Umrah`** or **`Hajj`** when the service type is Umrah/Hajj (read from `service.service_type.type`); and
 - the **service description** (`service_miscellaneous.description`, e.g. "extra luggage") when the service type is **Miscellaneous** (2026-06-19);
-- all other service types keep a blank Remarks.
+- for **company 1007 only**, the **service name** (`service.service_type.type`, e.g. Tour / Visa / Cruise / Train / Insurance) for all other service types (2026-06-30); and
+- for every **other company**, all remaining service types keep a blank Remarks.
 
 Details:
-- The General booking row sets `remarks = (type === 'umrah' || type === 'hajj') ? service.service_type.type : (type === 'miscellaneous' ? service.service_miscellaneous?.description : "")`.
+- The General booking row sets `remarks = (type === 'umrah' || type === 'hajj') ? service.service_type.type : (type === 'miscellaneous' && service.description ? \`Misc/${service.description}\` : (isCompany1007 ? service.service_type.type : ""))`, where `isCompany1007 = String(req.user.company_code) === '1007'`.
+- **Company 1007 (2026-06-30)**: the final "else" shows the service name instead of blank, so Tour/Visa/Cruise/Train/Insurance rows display their type in Remarks. All other companies are unchanged.
 - The customer orders query now includes `service_miscellaneous` (attribute `description` only) so the value is available.
 - Display-only — no effect on amounts, Total Sales, or Net Balance. PDF and Excel both already render the Remarks column.
 - (Umrah/Hajj briefly used `package_name`, simplified to the type word — Hajj records often have a blank package name.)

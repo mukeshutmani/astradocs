@@ -21,6 +21,12 @@ branch_document_template {
   company_code: STRING (FK to companies)
   document_type: ENUM('invoice', 'cost', 'receipt', 'payment', 'deposit', 'credit_note', 'debit_note')
   document_title: STRING
+  header_content: MEDIUMTEXT (HTML, WYSIWYG)
+  footer_content: MEDIUMTEXT (HTML, WYSIWYG)
+  stamp_image: MEDIUMTEXT (base64 stamp image, shown above Authorized Signature on invoice)
+  stamp_opacity: INTEGER (0-100, default 55) - user-set transparency of the stamp
+  stamp_width: INTEGER (px, optional) - fixed stamp width, blank = auto
+  stamp_height: INTEGER (px, optional) - fixed stamp height, blank = auto
   header_name: STRING
   header_address: TEXT
   header_phone: STRING(100)
@@ -47,6 +53,19 @@ invoice_footer {
 ```
 
 **Note**: The `invoice_footer` model appears to be legacy. The current system uses `branch_document_template.footer_text`.
+
+### 1.1.1 Stamp (Signature Stamp)
+
+A stamp can be uploaded per branch + document type from the template editor
+(`EditBranchDocumentTemplate.jsx`, **Stamp** section, located between Header and Footer).
+
+- The image is stored as a base64 data URL in `stamp_image`.
+- The user controls `stamp_opacity` (0-100%), and optional `stamp_width` / `stamp_height` in px (blank = auto).
+- On the **invoice** print (`invoiceDocument.ejs`), the stamp renders just above the
+  "Authorized Signature" line, overlapping it slightly (negative bottom margin) at the
+  chosen opacity, so both the stamp and the signature text stay readable.
+- Only the invoice document renders the stamp today. Other document types store the
+  fields but do not print the stamp unless their EJS is extended.
 
 ### 1.2 Supported Document Types & Mapping
 
