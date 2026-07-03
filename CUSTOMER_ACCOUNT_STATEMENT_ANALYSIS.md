@@ -66,9 +66,9 @@ The Customer Account Statement Report:
 6. **Hide Column** — NEW (2026-06-09)
    - Single multi-select dropdown labelled **Hide Column** (`hideColumns` array)
    - Options: **Discount, Rebate, T.Fee, SST** (internal keys: `discount`, `rebate`, `transactionFee`, `sst`)
-   - The user can tick one or more; those columns are **hidden** from the Ticket Booking and Refund Ticket Booking tables (PDF + Excel). Nothing selected = report unchanged.
+   - The user can tick one or more; those columns are **hidden** from the Ticket Booking, Refund Ticket Booking, and (2026-07-02) General/Other Booking tables (PDF + Excel). Nothing selected = report unchanged.
    - **Display-only**: hiding a column does NOT change the per-row **Net** or any total — the hidden amounts are still included in the math (Net is precomputed and the section totals sum `Net`). The "Total" row colspan shrinks by the number of hidden columns so the table stays aligned.
-   - **T.Fee folds into Taxes when hidden (2026-06-17)**: when **T.Fee** (`transactionFee`) is hidden, its amount is added into the **Taxes** column for each Ticket Booking row (e.g. Taxes 200 + T.Fee 50 → Taxes shows 250). This is display-only — **Net**, **Total Sales**, and **Net Balance** are unchanged. Applied at the ticket row build in `getCustomerAccountStatementReport` (`taxes = (taxesPerPassenger + (hidden ? transactionFeePerPassenger : 0)) * exchangeRate`), so both PDF and Excel (including the Excel Taxes total) reflect it. Only affects the Ticket Bookings table (the Refund-Ticket table is not populated in this report).
+   - **T.Fee folds into Taxes when hidden (2026-06-17)**: when **T.Fee** (`transactionFee`) is hidden, its amount is added into the **Taxes** column for each Ticket Booking row (e.g. Taxes 200 + T.Fee 50 → Taxes shows 250). This is display-only — **Net**, **Total Sales**, and **Net Balance** are unchanged. Applied at the ticket row build in `getCustomerAccountStatementReport` (`taxes = (taxesPerPassenger + (hidden ? transactionFeePerPassenger : 0)) * exchangeRate`), so both PDF and Excel (including the Excel Taxes total) reflect it. Affects the Ticket Bookings table and (2026-07-02) the General/Other Bookings table (the Refund-Ticket table is not populated in this report).
    - UI: the trigger is an **auto-width** dropdown button (`w-auto`, `min-w-[160px]`, `max-w-full`) that grows with the number of selected labels and stays within the card; built with `DropdownMenuCheckboxItem` (menu stays open on toggle via `onSelect` preventDefault).
 
 7. **Hide Opening Balance** — NEW (2026-06-30)
@@ -429,14 +429,20 @@ Columns:
 
 #### 3. **General/Other Bookings** (Non-flight, non-hotel services)
 Columns:
+- S.NO (per-invoice passenger serial)
 - Date
 - Invoice
+- Status
 - Pax (passenger names)
 - Ref No (reference number - empty)
-- Remarks (the word **Umrah**/**Hajj** when the service type is Umrah/Hajj, otherwise empty — see [Hajj/Umrah Word in Remarks](#1007-hajjumrah-word-in-remarks-2026-06-17))
+- Service (service type name — Tour, Visa, Umrah, Hajj, Miscellaneous, etc. — **all companies**, 2026-07-02)
+- Remarks (the **invoice's `remarks` field**, 2026-07-02 — see section 10.0.10)
 - Vendor (vendor name - empty)
 - Transaction Date (invoice_date)
+- Fare, Taxes, Discount, Rebate, T.Fee, SST (2026-07-02 — invoice-level amounts split evenly across the invoice's passenger rows, converted to PKR; display-only breakdown)
 - Net (total amount)
+
+> **Hide Column (2026-07-02)**: the Hide Column filter (Discount/Rebate/T.Fee/SST) also applies to this table, including the T.Fee-folds-into-Taxes rule. Hiding is display-only — Net and all totals are unchanged.
 
 #### 4. **Refund Ticket Bookings**
 Currently not used - only credit notes are shown in refund sections
@@ -706,6 +712,8 @@ Only receipts with GL account payments totaling > 0 are displayed:
 
 ## 10.0.7 Hajj/Umrah Word + Miscellaneous Description in Remarks (2026-06-17)
 
+> **SUPERSEDED (2026-07-02)**: the Remarks logic below was replaced — Remarks now shows the invoice's `remarks` field, and the service type name moved to a new **Service** column shown for **all companies** (the 1007 restriction was removed). See section 10.0.10.
+
 For **General/Other Bookings**, the **Remarks** column shows:
 - the word **`Umrah`** or **`Hajj`** when the service type is Umrah/Hajj (read from `service.service_type.type`); and
 - the **service description** (`service_miscellaneous.description`, e.g. "extra luggage") when the service type is **Miscellaneous** (2026-06-19);
@@ -733,10 +741,23 @@ The **Ticket Bookings** section now has an **S.NO** column as the **first column
 
 The **General/Other Bookings** section now renders **one row per passenger** (it previously showed a single row per invoice with passenger names comma-joined).
 - For each invoice, the build loops the service passengers and pushes one row each; the invoice total is **split across passengers** with a cent-accurate split, so the section total still equals the invoice total.
-- `remarks` (the word Umrah/Hajj, see 10.0.7) and other fields repeat on each passenger row.
+- `remarks` (the invoice's remarks since 2026-07-02, see 10.0.10) and other fields repeat on each passenger row.
 - Services with no passengers still produce a single row carrying the full amount.
 - "Add Sale Invoices" / Net Balance unaffected (summary adds the invoice total once per invoice, independent of the row split).
 - **S.NO column (2026-06-18)**: an **S.NO** column was added as the **first column**, numbering passenger rows **1..N per invoice** (restarts each invoice) — `sno: String(gi + 1)` on each row; added to the PDF table (first `th`/`td`, narrowed via `width:1%; nowrap`, Total-row colspan bumped 8→9) and to the Excel `addSection` columns (header `S.NO`).
+
+## 10.0.10 General/Other Bookings — Service Column, Invoice Remarks, Amount Breakdown (2026-07-02)
+
+The **General/Other Bookings** section was reworked (supersedes the Remarks logic in 10.0.7):
+
+1. **Service column (NEW, all companies)**: a **Service** column (after Ref No) shows the service type name (`service.service_type.type` — Tour, Visa, Umrah, Hajj, Miscellaneous, etc.). The company-1007 restriction was **removed**; this now applies to every company.
+2. **Remarks = invoice remarks**: the Remarks column now shows the invoice's `remarks` field (`inv.remarks`). The old Umrah/Hajj word, `Misc/<description>`, and 1007 service-name fallbacks were removed (the Service column covers the type name).
+3. **Amount breakdown columns (NEW)**: **Fare, Taxes, Discount, Rebate, T.Fee, SST** added between Transaction Date and Net.
+   - Values are the invoice-level amounts (`fare = price × quantity`, `taxes = invoice_taxes × quantity`, discount/rebate = percent of price × quantity, T.Fee and SST per-invoice) **split evenly across the invoice's passenger rows**, so each column's section total equals the invoice totals. All converted to PKR with the invoice's (frozen) exchange rate.
+   - **Display-only**: Net per row is still the cent-accurate split of `total_price`; **Total Sales** and **Net Balance** are unchanged.
+4. **Hide Column applies here too**: hiding Discount/Rebate/T.Fee/SST now also hides them in this table (PDF via `isHidden` conditionals + colspan `16 - hiddenTicketCount`; Excel via `applyHidden`). When T.Fee is hidden, its amount folds into Taxes (same rule as the Ticket table).
+
+**Files Modified**: `psback/controllers/report.controller.js` (General row build in `getCustomerAccountStatementReport` + Excel `addSection` column list), `psback/views/pages/reports/customer-account-statement.ejs` (General table header/body/total row).
 
 ## 11. Special Handling & Edge Cases
 
@@ -1025,5 +1046,5 @@ WHERE customer_deposit_id IN ({depositIds})
 
 ---
 
-**Last Updated**: June 2026 — Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
+**Last Updated**: July 2026 — General/Other Bookings: new Service column (all companies, 1007 restriction removed), Remarks now shows invoice remarks, Fare/Taxes/Discount/Rebate/T.Fee/SST breakdown columns added, Hide Column filter extended to this table; earlier (June 2026): Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
 
