@@ -154,7 +154,7 @@ XO stands for **Exchange Order** or **Costing Document**. It's the core mechanis
 
 - **Ticket Bookings**: `date, xo, ticketNo, passenger, sector, class, fare, taxes, net`
 - **Hotel Bookings**: `date, xo, hotel, passenger, checkin, checkout, roomType, rooms, nights, net`
-- **General Bookings**: `date, xo, pax, refNo, remarks, vendor, transactionDate, net`
+- **General Bookings**: `date, xo, pax, refNo, service, remarks, vendor, transactionDate, net`
 - **Refund Bookings**: Same structure with refund amounts
 
 **Important**: Services without Cost data are skipped and logged with warning.
@@ -277,6 +277,7 @@ Note: All amounts are converted to PKR using the convertToPKR service from curre
   paymentNo: deposit.payment_number,
   supplierNo: supplier.supp_no,
   supplierName: supplier.supp_name,
+  remarks: deposit.remarks,
   originalAmount: deposit.amount,
   availableAmount: deposit.current_amount
 }
@@ -492,6 +493,7 @@ db.journal_entry.findAll({
         xo: "XO-DOC-NUMBER",
         pax: "Passenger Name",
         refNo: "Reference",
+        service: "Tour",           // service type name (Tour, Visa, Umrah, Hajj, Miscellaneous, ...)
         remarks: "Remarks",
         vendor: "Vendor Name",
         transactionDate: "DD-MM-YYYY",
@@ -549,6 +551,7 @@ db.journal_entry.findAll({
         paymentNo: "PAYMENT-001",
         supplierNo: "SUPP001",
         supplierName: "Supplier Name",
+        remarks: "Advance for group booking",
         originalAmount: 5000.00,
         availableAmount: 3000.00
       }
@@ -1158,6 +1161,40 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 **Scope**: Ticket Bookings + Refund Ticket Bookings, supplier function only. Hotel/General and the Customer Account Statement unchanged.
 
+### 16.17 Remarks Column in Advance Payments Section (2026-07-03)
+
+**Goal**: Show the remarks entered on a supplier advance payment in the report's Advance Payments section.
+
+**Implementation**:
+1. `advancePayments` row build now includes `remarks: deposit.remarks || ""` (source: `supplier_deposits.remarks` — already fetched, no query change).
+2. Excel: `'remarks'` added to `advancePaymentColumns` (both adjustmentDateMode variants), after Supplier Name. Header auto-renders as "REMARKS" via `addSection`.
+3. PDF: `Remarks` header + cell added to the hand-written Advance Payments table (after Supplier Name); `advColSpan` bumped 6→7 / 5→6 and `advTotalColSpan` 5→6 / 4→5 so the title and Total rows still span correctly.
+
+**Scope**: Display-only — totals, Less Advance Payments, opening balance, and Net Balance unchanged.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — `remarks` in the advance payment row; `'remarks'` in `advancePaymentColumns`.
+- `psback/views/pages/reports/supplier-account-statement.ejs` — Remarks header/cell; colspan updates.
+
+**Follow-up (same date)**: in the PDF, the Date, Payment No., and Supplier No. columns use fixed widths (75px / 110px / 85px) with `max-width: none; overflow: visible; white-space: nowrap;` — the overrides are required because the template's global cell CSS is `max-width: 0; overflow: hidden`, which otherwise clips the content (a bare `width: 1%` reduced these columns to a single letter). Freed width goes to Supplier Name / Remarks. Excel unchanged (shared auto-width loop).
+
+### 16.18 Service Column in General/Other Bookings (2026-07-03)
+
+**Goal**: Show the service type name (Tour, Visa, Umrah, Hajj, Miscellaneous, etc.) in the General Bookings section — mirroring the Service column the Customer Account Statement's General/Other Bookings table got on 2026-07-02.
+
+**Implementation**:
+1. Each General cost item's per-passenger rows (`itemPaxRows`) now carry `service: service.service_type?.type || ""`. Stored **per row** (not per XO) because one XO can hold cost items of different service types.
+2. `expandGeneralRows` passes `service` through to the final rows (`pr.service || ""`).
+3. Column position: after **Ref No**, same as the customer report — added to the Excel `addSection` General column list and the PDF `renderTable` General column list (dynamic table auto-generates the "Service" header and totals colspan).
+
+**Notes**:
+- Umrah/Hajj rows keep the section-16.14 Remarks word, so those rows show the type in both Service and Remarks (unchanged on purpose — the customer report instead moved Remarks to invoice remarks, which has no supplier-side equivalent).
+- Display-only — no effect on amounts, Add Sale Invoices, or Net Balance.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — `service` in `itemPaxRows` and `expandGeneralRows`; `'service'` in the General Excel columns.
+- `psback/views/pages/reports/supplier-account-statement.ejs` — `'service'` in the General `renderTable` columns.
+
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -1194,5 +1231,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-06-20 — Section 16.16 (Ticket Bookings split per cost item, not per whole XO; Refund-Ticket already per-item); 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
+**Last Updated**: 2026-07-03 — Section 16.17 (Remarks column in Advance Payments section); 2026-06-20 — Section 16.16 (Ticket Bookings split per cost item, not per whole XO; Refund-Ticket already per-item); 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
 
