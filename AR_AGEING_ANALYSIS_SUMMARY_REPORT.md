@@ -1,9 +1,9 @@
 # AR Ageing Analysis Summary Report - Technical Documentation
 
-**Version**: 1.6
-**Date**: 2026-06-11
+**Version**: 1.9
+**Date**: 2026-07-07
 **Author**: System Analysis
-**Status**: Stable — Branch "Is Not Blank" no longer restricts (v1.6); Manual JE settlement subtracted from outstanding (v1.5); PDF/Excel parity (v1.4), Detail/Summary parity (v1.3)
+**Status**: Stable — Manual JE match now company-scoped (v1.9); Total OverDue / Total Deposits / Total Credits columns added, informational only (v1.8); Customer column split into Customer Name + Cust No (v1.7); Branch "Is Not Blank" no longer restricts (v1.6); Manual JE settlement subtracted from outstanding (v1.5); PDF/Excel parity (v1.4), Detail/Summary parity (v1.3)
 
 ---
 
@@ -50,7 +50,8 @@ The AR Ageing Analysis Summary Report provides a condensed view of accounts rece
 
 | Column | Description |
 |--------|-------------|
-| Customer | `{customer_number}-{customer_name}` |
+| Customer Name | `customer_name` |
+| Cust No | `customer_number` |
 | Average Days | Average days overdue across invoices |
 | Current | Invoices within credit period |
 | 1-30 Days | 1-30 days overdue |
@@ -58,6 +59,9 @@ The AR Ageing Analysis Summary Report provides a condensed view of accounts rece
 | 61-90 Days | 61-90 days overdue |
 | 91-120 Days | 91-120 days overdue |
 | 121+ Days | Over 120 days overdue |
+| Total OverDue | Sum of the five overdue buckets (1-30 + 31-60 + 61-90 + 91-120 + 121+); Current excluded — informational only |
+| Total Deposits | Customer deposit credit (`deposit_credit`) — informational only |
+| Total Credits | Credit note credit (`credit_note_credit`) — informational only |
 | Total Outstanding | Net outstanding (invoices - deposits - credit notes) |
 
 ### Grand Total Row
@@ -106,23 +110,29 @@ This follows standard accounting conventions where brackets indicate credit bala
 
 ## PDF / Excel Parity
 
-Both outputs render the same 9 columns in the same order with the same labels and same formatting rules:
+Both outputs render the same 13 columns in the same order with the same labels and same formatting rules:
 
 | # | Column | Source / formula |
 |---|--------|------------------|
-| 1 | Customer | `{customer_number}-{customer_name}` |
-| 2 | Average Days | `total_aging` (avg days overdue across that customer's overdue invoices) |
-| 3 | Current | `ageing.current` |
-| 4 | 1-30 Days | `ageing['1to30days']` |
-| 5 | 31-60 Days | `ageing['31to60days']` |
-| 6 | 61-90 Days | `ageing['61to90days']` |
-| 7 | 91-120 Days | `ageing['91to120days']` |
-| 8 | 121+ Days | `ageing['over120days']` |
-| 9 | Total Outstanding | `total_outstanding` (net of deposits + credit notes; can be negative) |
+| 1 | Customer Name | `customer_name` |
+| 2 | Cust No | `customer_number` |
+| 3 | Average Days | `total_aging` (avg days overdue across that customer's overdue invoices) |
+| 4 | Current | `ageing.current` |
+| 5 | 1-30 Days | `ageing['1to30days']` |
+| 6 | 31-60 Days | `ageing['31to60days']` |
+| 7 | 61-90 Days | `ageing['61to90days']` |
+| 8 | 91-120 Days | `ageing['91to120days']` |
+| 9 | 121+ Days | `ageing['over120days']` |
+| 10 | Total OverDue | Sum of columns 5–9 (informational; not part of any other total) |
+| 11 | Total Deposits | `deposit_credit` (informational) |
+| 12 | Total Credits | `credit_note_credit` (informational) |
+| 13 | Total Outstanding | `total_outstanding` (net of deposits + credit notes; can be negative) |
 
-**Total row** (both outputs): the word `Total` spans the first two columns (Customer + Average Days), then bucket grand totals in columns 3–8, and the grand `Total Outstanding` sum in column 9. All amounts use the same negative-bracket / red-font rule.
+**Reading check**: Current + Total OverDue − Total Deposits − Total Credits = Total Outstanding.
 
-**Excel-specific**: header strip (company name, address, title, report ID, printed by, print date/time) merges `A:I` (9 columns wide).
+**Total row** (both outputs): the word `Total` spans the first three columns (Customer Name + Cust No + Average Days), then bucket grand totals in columns 4–9, Total OverDue / Total Deposits / Total Credits grand sums in columns 10–12, and the grand `Total Outstanding` sum in column 13. All amounts use the same negative-bracket / red-font rule.
+
+**Excel-specific**: header strip (company name, address, title, report ID, printed by, print date/time) merges `A:M` (13 columns wide).
 
 ---
 
@@ -148,6 +158,28 @@ The Summary Report totals must match the Detail Report:
 ---
 
 ## Version History
+
+### Version 1.9 (2026-07-07)
+
+- **Manual JE match now company-scoped** — the inline Manual JE query (v1.5) matched JE rows by invoice **number** only. Invoice numbers repeat across companies, so a same-numbered invoice in another company with a Manual JE would wrongly reduce this company's outstanding. The `journal_batch` include now nests a required `createdBy` user include filtered by `req.user.company_code` (part of the system-wide Manual JE company-scoping fix — see `JOURNAL_ENTRIES_IMPROVEMENTS.md`, 2026-07-07).
+
+### Version 1.8 (2026-07-06)
+
+- **Three informational columns added** between "121+ Days" and "Total Outstanding" (report is now 13 columns, was 10) — mirrors the Detail report's v1.11 Total OverDue column and additionally exposes the credit figures the controller already computed:
+  - **Total OverDue** = sum of the five overdue buckets (1-30 + 31-60 + 61-90 + 91-120 + 121+); Current excluded. Blank math impact — not added into any other total.
+  - **Total Deposits** = `deposit_credit` (was already subtracted inside `total_outstanding`, now also shown).
+  - **Total Credits** = `credit_note_credit` (same).
+  - Grand Total row sums all three across customers; `Total Outstanding` math unchanged.
+  - PDF (`ar_ageing_analysis_summary.ejs`): three new `th`/`td` pairs + three grand-total cells (standard negative-bracket rule).
+  - Excel (`getARAgeingAnalysisSummaryReport`): `columns`/`columnLabels`/`amountColumns` extended; data rows write cells 4..13; `grandTotals` extended; header-strip merges `A:J → A:M`.
+  - No controller calculation changes — `deposit_credit`/`credit_note_credit` were already on the customer data object.
+
+### Version 1.7 (2026-07-06)
+
+- **Customer column split into Customer Name + Cust No** — the single `Customer` column (`{customer_number}-{customer_name}`) was split into two columns: **Customer Name** (`customer_name`) first, then **Cust No** (`customer_number`). Report is now 10 columns (was 9). Applied to both outputs:
+  - PDF (`ar_ageing_analysis_summary.ejs`): two `th`/`td` cells replace the combined one; Total-row label colspan `2 → 3`.
+  - Excel (`getARAgeingAnalysisSummaryReport`): `columns`/`columnLabels` updated; data cells shifted right by one (Average Days now col 3, buckets 4–9, Total Outstanding col 10); Total label merge `1..2 → 1..3`; header-strip merges `A:I → A:J`.
+  - Display-only — no calculation, filter, or ordering change.
 
 ### Version 1.6 (2026-06-11)
 

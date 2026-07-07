@@ -434,13 +434,14 @@ Columns:
 - Invoice
 - Status
 - Pax (passenger names)
-- Ref No (reference number - empty)
+- Description (2026-07-06 — Visa: visa code; Insurance: policy number / plan / coverage dates; others: the service's `description` field — see section 10.0.11)
 - Service (service type name — Tour, Visa, Umrah, Hajj, Miscellaneous, etc. — **all companies**, 2026-07-02)
 - Remarks (the **invoice's `remarks` field**, 2026-07-02 — see section 10.0.10)
-- Vendor (vendor name - empty)
 - Transaction Date (invoice_date)
 - Fare, Taxes, Discount, Rebate, T.Fee, SST (2026-07-02 — invoice-level amounts split evenly across the invoice's passenger rows, converted to PKR; display-only breakdown)
 - Net (total amount)
+
+> **Removed (2026-07-06)**: the always-empty **Ref No** and **Vendor** columns — see section 10.0.11.
 
 > **Hide Column (2026-07-02)**: the Hide Column filter (Discount/Rebate/T.Fee/SST) also applies to this table, including the T.Fee-folds-into-Taxes rule. Hiding is display-only — Net and all totals are unchanged.
 
@@ -759,6 +760,21 @@ The **General/Other Bookings** section was reworked (supersedes the Remarks logi
 
 **Files Modified**: `psback/controllers/report.controller.js` (General row build in `getCustomerAccountStatementReport` + Excel `addSection` column list), `psback/views/pages/reports/customer-account-statement.ejs` (General table header/body/total row).
 
+## 10.0.11 General/Other Bookings — Description Column Added; Ref No & Vendor Removed (2026-07-06)
+
+1. **Description column (NEW)**: added right after **Pax**, showing the service's own `description` field (`services.description`, entered on the service form). The orders query already fetched this attribute, so no query change; rows whose service has no description show blank.
+2. **Ref No and Vendor columns removed**: both were always empty in this report (hardcoded `""` in the row build), so they were dropped from the row build, the PDF table, and the Excel column list.
+3. The table is now **16 columns** (was 17). PDF Total-row label colspan updated from `16 - hiddenTicketCount` to `15 - hiddenTicketCount`; Excel adapts automatically (dynamic `addSection` derives headers, alignment, and the Total merge from the column array).
+4. **Scope**: General Bookings only — the Refund General Bookings (credit notes) table keeps its existing columns. Display-only — totals, Total Sales, and Net Balance unchanged. The Hide Column filter behavior is unaffected.
+
+**Files Modified**: `psback/controllers/report.controller.js` (`getCustomerAccountStatementReport` — `genDescription` in the General row build, `refNo`/`vendor` removed, Excel General column list updated), `psback/views/pages/reports/customer-account-statement.ejs` (General table header/body cells, Total-row colspan).
+
+**Follow-up (2026-07-06) — service-aware Description for Visa & Insurance**:
+1. **Visa services**: Description shows the visa code(s) from `visa_code_maintenance.code` (via `service_visas.visa_code`), unique codes comma-joined when one service holds several visas (e.g. `USA-VST VISA`).
+2. **Insurance services**: Description shows `Policy# {policy_number} / {plan_type} / {first_coverage_date} to {last_coverage_date}` (DD-MM-YYYY), skipping empty parts.
+3. **Fallback**: if a visa has no code / insurance has no policy fields, or for every other service type, Description keeps showing `services.description`.
+4. Query change: two `required: false` includes added to the report's orders query — `service_visa` (attributes `id`, `visa_code`, nested `visa_code_maintenance` with `id`, `code`) and `service_insurance` (attributes `id`, `policy_number`, `plan_type`, `first_coverage_date`, `last_coverage_date`). PDF/Excel render the same `description` field — no template change.
+
 ## 11. Special Handling & Edge Cases
 
 ### 11.1 Hotel Room Multiplier
@@ -1046,5 +1062,5 @@ WHERE customer_deposit_id IN ({depositIds})
 
 ---
 
-**Last Updated**: July 2026 — General/Other Bookings: new Service column (all companies, 1007 restriction removed), Remarks now shows invoice remarks, Fare/Taxes/Discount/Rebate/T.Fee/SST breakdown columns added, Hide Column filter extended to this table; earlier (June 2026): Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
+**Last Updated**: July 2026 — General/Other Bookings: Description column added after Pax (service's `description`), always-empty Ref No and Vendor columns removed (2026-07-06, section 10.0.11); earlier: new Service column (all companies, 1007 restriction removed), Remarks now shows invoice remarks, Fare/Taxes/Discount/Rebate/T.Fee/SST breakdown columns added, Hide Column filter extended to this table; earlier (June 2026): Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
 

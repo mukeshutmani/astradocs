@@ -96,3 +96,14 @@ The journal entries system has been significantly improved to provide a better u
 - **Better User Experience**: Clear feedback and intuitive controls
 - **Professional Appearance**: Modern design inspires confidence
 - **Improved Accuracy**: Visual cues help users spot issues quickly
+
+## Manual JE ↔ Document Linkage Is Company-Scoped (2026-07-07)
+
+**Problem found**: Manual JEs are linked to invoices/XOs by storing the document **number text** in `journal_entries.analysis_code1`. Document numbers are **unique per company only** — five companies had a "KHXO00000025". Every lookup matched by number alone, so company 9876's settlement JE (KHJV000214) showed on 5th Pillar's (1007) same-numbered XO, was subtracted from its balance ("Paid by JE"), and — worst — the JE post/void status recalc could **flip other companies' same-numbered invoice/XO statuses**.
+
+**Fix**: every Manual-JE-by-document-number lookup is now scoped to the calling company via the JE batch's creator (`journal_batches.created_by → users.company_code`):
+1. `psback/services/manualJeAdjustment.js` — all helpers accept a `companyCode` argument (`liveManualJeWhereClause` adds a required `createdBy` user include); `recalculateInvoiceStatusByNumber` / `recalculateCostStatusByDocNumber` additionally scope their invoice fetch (via service→order→user) and document fetch (via documents.user_id→user).
+2. Callers now pass the company: `journal_entry.controller.js` (related-documents picker, `manualJeByOrder` order tab, JE create/update/void recalcs), `invoice.controller.js` (receipt settle/void), `payment.controller.js` (payment settle/delete, settlement print — derives company from the settlement's user since that route is unauthenticated), `customer.controller.js` (finance tab), `service.controller.js` (supplier XO listing), `report.controller.js` (supplier position/AP summary + AR Ageing Detail & Summary inline queries), `reports/dailySettlement.report.controller.js`.
+3. `document.controller.js` `getDocument` (printed XO/invoice "Paid by JE" footer) — route is unauthenticated, so the company is derived from the rendered document's owner (`documents.user_id → users.company_code`).
+
+**Behavior**: a company only ever sees/subtracts its **own** JEs on its documents. If `companyCode` is not passed (none of the current callers), the helpers fall back to the old unscoped behavior.

@@ -1,9 +1,9 @@
 # AR Ageing Analysis Detail Report - Technical Documentation
 
-**Version**: 1.10
-**Date**: 2026-06-11
+**Version**: 1.12
+**Date**: 2026-07-07
 **Author**: System Analysis
-**Status**: Stable — Branch/Sales ID "Is Not Blank" no longer restricts (v1.10); Manual JE settlement subtracted from outstanding in v1.9; Excel freeze pane fixed in v1.8
+**Status**: Stable — Manual JE match now company-scoped (v1.12); Total OverDue column added as 2nd-last column, informational only (v1.11); Branch/Sales ID "Is Not Blank" no longer restricts (v1.10); Manual JE settlement subtracted from outstanding in v1.9; Excel freeze pane fixed in v1.8
 
 ---
 
@@ -310,7 +310,7 @@ Currency conversion errors are caught and logged - the unconverted amount is use
 │ Customer/Doc No | TC Code | Sales ID | Pax Name |      │
 │ Doc Date | Due Date | Days Overdue | Current |         │
 │ 1-30 Days | 31-60 Days | 61-90 Days | 91-120 Days |    │
-│ 121+ Days | Total Outstanding                           │
+│ 121+ Days | Total OverDue | Total Outstanding           │
 ├─────────────────────────────────────────────────────────┤
 │ Customer Section (repeats for each customer)           │
 │ ├─ Customer Name & Number                              │
@@ -330,33 +330,33 @@ Currency conversion errors are caught and logged - the unconverted amount is use
 
 ### Excel Structure
 
-The Excel export now mirrors the PDF **exactly** — same 14 columns, same per-customer structure, same color scheme, same grand-total block.
+The Excel export now mirrors the PDF **exactly** — same 15 columns, same per-customer structure, same color scheme, same grand-total block.
 
-**Columns (14 total, A..N)** — identical to the PDF:
-Customer/Doc No. | TC Code | Sales ID | Pax Name | Doc Date | Due Date | Days Overdue | Current (Within Cr. Period) | 1-30 Days | 31-60 Days | 61-90 Days | 91-120 Days | 121+ Days | Total Outstanding
+**Columns (15 total, A..O)** — identical to the PDF:
+Customer/Doc No. | TC Code | Sales ID | Pax Name | Doc Date | Due Date | Days Overdue | Current (Within Cr. Period) | 1-30 Days | 31-60 Days | 61-90 Days | 91-120 Days | 121+ Days | Total OverDue | Total Outstanding
 
 **Layout**:
-- **Rows 1-6**: Header section (company name size 24, address, report title, metadata). Merged across A..N.
+- **Rows 1-6**: Header section (company name size 24, address, report title, metadata). Merged across A..O.
 - **Row 7**: Blank spacer.
-- **Row 8**: Column header row (gray `#D9D9D9`, bold, bordered). Amount columns (G..N) right-aligned.
+- **Row 8**: Column header row (gray `#D9D9D9`, bold, bordered). Amount columns (G..O) right-aligned.
 - **Frozen pane**: `ySplit: 8, topLeftCell: 'A9', activeCell: 'A9'` — rows 1-8 (title block + column header row) stay pinned while data rows scroll. Previously froze only rows 1-7, causing the column header row to scroll out of view when paging through data. `topLeftCell` must be set; otherwise Excel re-renders the frozen rows at the top of the scrollable pane.
 
 **Per-customer section** (repeats for each customer):
-1. **Customer header row** — `Customer: {number} - {name}` merged A..N, bold, light gray `#F0F0F0`.
-2. **Invoice rows** — one per invoice. Outstanding amount placed in the matching ageing-bucket column (H..M based on days overdue); Total Outstanding in col N bold. Other bucket cells left blank. Uses `invoice.outstanding || invoice.amount` and `invoice.days_overdue || invoice.days_since_created` (same fallback as PDF).
-3. **Customer Total row** — label merged A..F (right-aligned bold), avg days in G, bucket totals H..M, total in N. Light gray `#F0F0F0` fill.
+1. **Customer header row** — `Customer: {number} - {name}` merged A..O, bold, light gray `#F0F0F0`.
+2. **Invoice rows** — one per invoice. Outstanding amount placed in the matching ageing-bucket column (H..M based on days overdue); **Total OverDue in col N** (sum of the row's five overdue buckets, blank when Current); Total Outstanding in col O bold. Other bucket cells left blank. Uses `invoice.outstanding || invoice.amount` and `invoice.days_overdue || invoice.days_since_created` (same fallback as PDF).
+3. **Customer Total row** — label merged A..F (right-aligned bold), avg days in G, bucket totals H..M, **Total OverDue in N** (sum of the five overdue bucket totals), total in O. Light gray `#F0F0F0` fill.
 4. **Deposits section** (only if `customer.deposits.length > 0`):
-   - Section header: `Deposits (Credit Balance)` merged A..N, yellow `#FFF3CD`, bold.
-   - Deposit rows: pink `#FFE6E6` fill, amounts shown in parens, red font `#FF0000`. Pax Name column (col 4) is left blank.
-5. **Credit Notes section** (only if `customer.credit_notes.length > 0`): same styling as Deposits; Pax Name column (col 4) left blank.
-6. **Per-customer Net Outstanding row** (only if deposits or credit notes exist): label merged A..M (right-aligned), net value in col N, green `#D4EDDA` fill.
+   - Section header: `Deposits (Credit Balance)` merged A..O, yellow `#FFF3CD`, bold.
+   - Deposit rows: pink `#FFE6E6` fill, amounts shown in parens, red font `#FF0000`. Pax Name column (col 4) and Total OverDue column (col N) are left blank.
+5. **Credit Notes section** (only if `customer.credit_notes.length > 0`): same styling as Deposits; Pax Name (col 4) and Total OverDue (col N) left blank.
+6. **Per-customer Net Outstanding row** (only if deposits or credit notes exist): label merged A..N (right-aligned), net value in col O, green `#D4EDDA` fill.
 7. **Blank spacer row** between customers.
 
 **Grand Total block** (end of sheet):
-- **Grand Total - All Customers row** — dark `#333333` fill with **white text**. Label merged A..G (right-aligned bold), bucket sums H..M, grand total in N.
-- **Less: Total Deposits** (only if `grandDeposits > 0 || grandCreditNotes > 0`) — pink `#FFE6E6`, red amount in parens in col N.
+- **Grand Total - All Customers row** — dark `#333333` fill with **white text**. Label merged A..G (right-aligned bold), bucket sums H..M, **Total OverDue sum in N**, grand total in O.
+- **Less: Total Deposits** (only if `grandDeposits > 0 || grandCreditNotes > 0`) — pink `#FFE6E6`, red amount in parens in col O.
 - **Less: Total Credit Notes** — same styling.
-- **NET GRAND TOTAL** — green `#D4EDDA`, bold size 12, net value (size 14 bold) in col N = `grandTotal − grandDeposits − grandCreditNotes`.
+- **NET GRAND TOTAL** — green `#D4EDDA`, bold size 12, net value (size 14 bold) in col O = `grandTotal − grandDeposits − grandCreditNotes`.
 
 **Formatting**: All amounts use `en-US` locale with 2-decimal formatting. All cells have thin black borders. Frozen pane preserves the header rows while scrolling data.
 
@@ -452,6 +452,21 @@ Minor confusion for users comparing PDF and Excel outputs.
 14. **PDF Template Foreign Currency Label** - Replaced hardcoded `invoice.currency === '145'` (USD-only) with `invoice.original_currency` check. Now labels all foreign currencies (USD, SAR, AED, CNY, etc.).
 15. **N+1 Query Elimination** - Replaced per-customer queries (3 queries × N customers) with 3 batch queries using `Op.in` for all customer IDs. Results grouped by `customer_id` in JavaScript. Reduces database round-trips from ~1500 to 3 for 500 customers.
 16. **API Timeout Increase** - Backend report route timeout increased from 30s to 5 minutes. Frontend axios timeout for report APIs increased to 5 minutes. Prevents `ERR_EMPTY_RESPONSE` on large datasets.
+
+### Completed Fixes (Version 1.12) — 2026-07-07
+
+22. **Manual JE match now company-scoped** — the inline Manual JE query (item 19, v1.9) matched JE rows by invoice **number** only. Invoice numbers repeat across companies, so a same-numbered invoice in another company with a Manual JE would wrongly reduce this company's outstanding. The `journal_batch` include now nests a required `createdBy` user include filtered by `req.user.company_code` (part of the system-wide Manual JE company-scoping fix — see `JOURNAL_ENTRIES_IMPROVEMENTS.md`, 2026-07-07).
+
+### Completed Fixes (Version 1.11) — 2026-07-06
+
+21. **Total OverDue column (informational)** — New column inserted as the **2nd-last column** (between "121+ Days" and "Total Outstanding"), in both PDF and Excel (report is now 15 columns). It shows the sum of the five overdue buckets only — `1-30 + 31-60 + 61-90 + 91-120 + 121+ Days` — so the user can read the total overdue without adding buckets manually. **Current is excluded.**
+    - **Invoice rows**: sum of that row's overdue buckets (blank when the invoice is Current).
+    - **Customer Total row**: sum of the customer's five overdue bucket totals.
+    - **GRAND TOTAL row**: sum of the five grand bucket totals.
+    - **Deposits / Credit Notes rows and Net rows** (Net Outstanding, Less: Deposits, Less: Credit Notes, NET GRAND TOTAL): Total OverDue left **blank**; their values stay in the last column, label spans widened by one.
+    - **No calculation changes**: Total Outstanding, Net Outstanding, and all grand totals are computed exactly as before — the column is display-only and is not part of any other total.
+    - Files: `psback/views/pages/reports/ar_ageing_analysis_detail_fixed.ejs` (header, invoice/customer-total/grand-total cells, colspans 14→15 and 13→14); `psback/controllers/report.controller.js` Excel block (`COL_COUNT` 14→15, `LAST_COL` N→O, header list, cell shifts 14→15, label merges A..M→A..N).
+    - Scope: AR Ageing **Detail** report only — the Summary report was not touched.
 
 ### Completed Fixes (Version 1.10) — 2026-06-11
 
