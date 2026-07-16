@@ -1195,6 +1195,28 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 - `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — `service` in `itemPaxRows` and `expandGeneralRows`; `'service'` in the General Excel columns.
 - `psback/views/pages/reports/supplier-account-statement.ejs` — `'service'` in the General `renderTable` columns.
 
+### 16.19 Passenger-wise XOs — All Live Costs of a Service Are Processed (2026-07-14, Slice 1: period sections)
+
+**Problem**
+1. When one service was costed **passenger-wise** (each XO/cost row has `costs.passenger_id` set, quantity 1), the report showed NONE of those XOs — e.g. order TTSO00000077 (company 9876): TTXO00000039 and TTXO00000040 (both Printed) were missing entirely, and ~478,000 of payable was absent from Add Sale Invoices / Net Balance.
+
+**Root cause**
+1. The report read each service's cost via the `service.Cost` relation, which is **hard-scoped to `passenger_id = NULL`** (`models/index.js` — `service.hasOne(cost, { scope: { passenger_id: null } })`). Passenger-wise costs were invisible to it.
+2. For a pax-wise service the scoped relation returns nothing that passes the status filter, so the whole service was dropped from the query result.
+
+**Fix (period sections — main supplier query only)**
+1. The main query's cost include now uses the unscoped **`AllCosts`** relation (same status filter, same costing-document INNER JOIN, same nested includes).
+2. The per-service processing is wrapped in a **per-cost loop** — every live XO of a service produces its own booking rows, its own `addSaleInvoices` contribution, and its own vouchers pass (the existing `countedVoucherPaymentIds` dedup prevents double-counted payments).
+3. **Passenger-wise XO rows show only their own passenger** (ticket/hotel/general passenger lists filtered by `cost.passenger_id`, falling back to all passengers if no match). Whole-service XOs (`passenger_id` NULL) behave exactly as before.
+4. **Refunds** are service-level records — they run once per service (first cost iteration) and reference the whole-service cost when present (`refundCost` / `refundXoNumber`), preserving legacy behaviour.
+
+**Not yet done (pending slices)**
+1. **Slice 2**: the historical/opening-balance loop still uses the scoped `service.Cost`, so pre-period passenger-wise XOs are NOT yet counted in Opening Balance B/F — a period report whose pax-wise XOs fall before the start date will not reconcile until slice 2 lands.
+2. The Supplier Position Report (if it shares the same pattern) has not been checked/changed.
+
+**Files Modified**:
+- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — main query cost include → `as: 'AllCosts'`; per-cost loop around the period processing; pax filters on the three booking builds; refund run-once guard + `refundCost`/`refundXoNumber`; vouchers read the loop's cost.
+
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -1231,5 +1253,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-07-03 — Section 16.17 (Remarks column in Advance Payments section); 2026-06-20 — Section 16.16 (Ticket Bookings split per cost item, not per whole XO; Refund-Ticket already per-item); 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
+**Last Updated**: 2026-07-14 — Class column in the PDF Ticket Bookings table narrowed to shrink-to-fit (`width: 1%; nowrap`, same treatment as S.NO — `renderTable` th/td in `supplier-account-statement.ejs`; Excel unchanged); Section 16.19 (passenger-wise XOs: period sections now process ALL live costs of a service via the `AllCosts` relation; pax-wise XO rows show only their own passenger; opening-balance slice still pending); 2026-07-03 — Section 16.17 (Remarks column in Advance Payments section); 2026-06-20 — Section 16.16 (Ticket Bookings split per cost item, not per whole XO; Refund-Ticket already per-item); 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
 

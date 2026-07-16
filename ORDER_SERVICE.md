@@ -176,3 +176,16 @@ Plus: any **non-void** payment/receipt settlement blocks.
   document blocks only when it carries a posted JE. Verified against service 6525
   (order KHSO00000060): 5 voided invoices with no JE + numberless draft invoice/cost →
   now deletable.
+
+---
+
+## 8. Performance note — service list fetch (2026-07-14)
+
+`GET /service/order/:orderId` (`getServicesByOrderId` in
+`psback/controllers/service.controller.js`) previously included costs twice
+(`AllCosts` + the scoped `Cost`) inside the main Sequelize query, even though both
+fields are rebuilt right after from a separate costs query and the joined results
+were discarded. On orders with many costs/invoices/refunds the LEFT JOINs multiplied
+the SQL result set (~48,000 rows for order TTSO00000077, 1 service) and the Services
+section spun for ~1 minute. The two redundant includes were removed — the API
+response is unchanged (costs still come from the separate query).

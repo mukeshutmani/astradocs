@@ -94,6 +94,13 @@ invoiceTotal = netPerPassengerPKR × numberOfPassengers
 `suppFeePerPax` = `invoice.customer_supplementary_fee` divided by the number of passengers
 (the supplementary fee is a per-invoice total, split per passenger like T.Fee and SST).
 
+> **Per-passenger invoices (2026-07-14)**: if the invoice has a `passenger_id` (service invoiced
+> passenger-by-passenger), `numberOfPassengers` is the count of matching `service_passengers`
+> rows (normally 1), so the invoice is counted once instead of once per passenger. The period
+> invoice SQL selects `i.passenger_id` plus an `invoice_passenger_count` subquery for this. If
+> the invoice's passenger is no longer on the service, it falls back to the full passenger count.
+> Same rule as the Customer Account Statement (its doc, section 10.0.12).
+
 **Hotel Services**:
 ```
 totalAmount = totalPrice + (SST if not already included)
@@ -124,7 +131,9 @@ openingBalance = historicalInvoices
 
 Historical data = all transactions BEFORE the report's startDate. The helper applies the
 Air per-passenger valuation and the foreign-currency credit-note conversion, so opening
-balance reconciles with the previous period's Net Balance.
+balance reconciles with the previous period's Net Balance. Since 2026-07-14 the helper
+counts **all** live invoices of a service (previously only the first — passenger-wise
+invoices after the first were missed).
 
 Pre-period **opening invoices** are added on top of this (folded into Opening Balance B/F).
 

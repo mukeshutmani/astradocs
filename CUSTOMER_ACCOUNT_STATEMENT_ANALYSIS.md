@@ -409,6 +409,10 @@ Columns:
 Each passenger creates a row. The supplementary fee, transaction fee, and SST are per-invoice
 totals, so each is divided by the number of passengers for the per-passenger row values.
 
+> **Per-passenger invoices (2026-07-14)**: if the invoice has a `passenger_id` (the service was
+> invoiced passenger-by-passenger), only that one passenger's row is created and the per-invoice
+> fees are not split — see section 10.0.12.
+
 > **Hide Column (2026-06-09)**: The **Discount, Rebate, T.Fee, and SST** columns can be hidden
 > via the **Hide Column** filter (`hideColumns`). Hiding is display-only — the values remain in
 > the **Net** and in all totals. Applies to both this table and the Refund Ticket Booking table,
@@ -416,16 +420,23 @@ totals, so each is divided by the number of passengers for the per-passenger row
 
 #### 2. **Hotel Bookings**
 Columns:
+- S.NO (per-invoice passenger serial, restarts each invoice — 2026-07-14)
 - Date (invoice_date formatted as DD-MM-YYYY)
 - Invoice (invoice_number)
+- Status (invoice.status)
 - Hotel (service_hotel.hotel_name)
-- Passenger (service_passengers list)
+- Passenger (one passenger per row — 2026-07-14, previously all names comma-joined in one row)
 - Chk-in (service_hotel.check_in formatted as DD-MM-YYYY)
 - Chk-out (service_hotel.check_out formatted as DD-MM-YYYY)
 - Room Type (room_type.room_type)
 - Rooms (service_hotel.no_of_rooms)
 - Nights (service_hotel.no_of_nights)
-- Net (total calculated amount including room multiplier)
+- Net (invoice total split cent-accurately across the passenger rows, so rows still sum to the invoice total)
+
+> **One row per passenger (2026-07-14)**: mirrors the Ticket/General sections (section 10.0.14).
+> Per-passenger invoices (`passenger_id` set) show only their own passenger's row; services with
+> no passengers produce a single row with the full amount. Total Sales / Net Balance unchanged
+> (the summary still adds each invoice's total once).
 
 #### 3. **General/Other Bookings** (Non-flight, non-hotel services)
 Columns:
@@ -775,6 +786,54 @@ The **General/Other Bookings** section was reworked (supersedes the Remarks logi
 3. **Fallback**: if a visa has no code / insurance has no policy fields, or for every other service type, Description keeps showing `services.description`.
 4. Query change: two `required: false` includes added to the report's orders query — `service_visa` (attributes `id`, `visa_code`, nested `visa_code_maintenance` with `id`, `code`) and `service_insurance` (attributes `id`, `policy_number`, `plan_type`, `first_coverage_date`, `last_coverage_date`). PDF/Excel render the same `description` field — no template change.
 
+## 10.0.12 Per-Passenger Invoices — One Row, Counted Once (2026-07-14)
+
+**Problem**
+1. When one Air service was invoiced passenger-by-passenger (each invoice has `invoices.passenger_id` set, quantity 1), the Ticket Booking section repeated each invoice number once per **every** passenger on the service (e.g. TTIN00000065 on order TTSO00000077 / company 9876 appeared 3 times — the service has 3 passengers but the invoice covers only Faiza).
+2. Each repeated row carried the **full fare**, so Total Sales, Net Balance, and Opening Balance counted such an invoice once per passenger (~3× its real value: ~825,875 instead of 275,875).
+
+**Why it happened**
+1. The Air row build looped all `service.service_passengers` for every invoice and never read `invoices.passenger_id`.
+2. The same "× passenger count" formula exists in three places: the period calc, the Opening Balance helper, and the Customer Position Report's period calc.
+
+**Fix (same rule in all three places)**
+1. If `inv.passenger_id` is set, the passenger list for that invoice is filtered to the matching `service_passengers` row — one row, per-invoice fees (T.Fee/SST/Supp Fee) not split, invoice counted once. If no match is found (passenger later removed from the service), it falls back to the previous all-passengers behavior.
+2. `getCustomerAccountStatementReport` Air row build (`report.controller.js`) — passenger loop, `numberOfPassengers`, and Total Sales follow the filtered list.
+3. `customerOpeningBalance.service.js` — same rule in the historical Air formula; `passenger_id` added to the invoice and service_passenger attribute lists.
+4. Customer Position Report (`report.controller.js`) — the period invoice SQL now selects `i.passenger_id` plus an `invoice_passenger_count` subquery, and the `displayedInvoiceTotal` Air calc uses them.
+5. Whole-service invoices (`passenger_id` NULL) are completely unchanged.
+
+---
+
+## 10.0.13 All Invoices of a Service Are Processed (2026-07-14)
+
+**Problem**
+1. When a service held more than one live invoice (passenger-wise invoicing), only ONE showed on the report — e.g. order TTSO00000077 (company 9876) showed TTIN00000065 but TTIN00000068 was missing entirely (not displayed, not in Total Sales, not in Opening Balance).
+
+**Why it happened**
+1. The row build took only the **first** invoice of each service (`service.Invoices[0]`), written when one service always had exactly one live invoice.
+2. The Opening Balance helper had the identical single-invoice pattern.
+
+**Fix**
+1. `getCustomerAccountStatementReport` (`report.controller.js`) and `customerOpeningBalance.service.js` now loop **all** of a service's status-matching invoices; the existing per-invoice date filters and duplicate-ID guards apply unchanged, so nothing double-counts.
+2. Combined with 10.0.12, the business rule is: one invoice with N passengers → one invoice number with N passenger rows, counted once; N passenger-wise invoices → N invoice numbers, each with its own passenger's row, each counted once.
+3. The Customer Position Report's period SQL already read all invoices, so this also brings the two reports into agreement for multi-invoice services.
+
+---
+
+## 10.0.14 Hotel Bookings — One Row Per Passenger + S.NO (2026-07-14)
+
+The **Hotel Bookings** section now follows the same row rules as the Ticket and General sections:
+
+1. **One row per passenger** — previously one row per invoice with all passenger names comma-joined. The invoice's Net is split **cent-accurately** across the passenger rows (same mechanism as General, section 10.0.9), so the section total still equals the invoice totals. Services with no passengers produce a single row carrying the full amount.
+2. **S.NO column** added as the first column, numbering passenger rows 1..N per invoice (restarts each invoice) — PDF (`width:1%; nowrap`, Total-row colspan 10 → 11) and Excel (`'sno'` first in the Hotel `addSection` list).
+3. **Per-passenger invoices** (`invoices.passenger_id` set) show only their own passenger's row (same rule as 10.0.12). Note: as of 2026-07-14 no hotel invoice in the DB uses `passenger_id`, so this is future-proofing.
+4. **Display-only** — Total Sales, Net Balance, and Opening Balance are unchanged (each invoice is still counted once via `total_price`).
+
+**Files Modified**: `psback/controllers/report.controller.js` (hotel row build + Excel Hotel column list), `psback/views/pages/reports/customer-account-statement.ejs` (Hotel table header/body/total row).
+
+---
+
 ## 11. Special Handling & Edge Cases
 
 ### 11.1 Hotel Room Multiplier
@@ -829,7 +888,9 @@ When startDate equals endDate (single day):
 All amounts automatically converted to PKR. For invoices, the exchange rate frozen at print time is used (stored in `invoice.exchange_rate`). If no stored rate exists (legacy invoices), falls back to the live rate from the currency table. If no exchange rate found at all, defaults to 1.0
 
 ### 11.9 Multiple Passengers
-Flight refunds and bookings create one row per passenger per invoice.
+Flight refunds and bookings create one row per passenger per invoice. For per-passenger
+invoices (`invoices.passenger_id` set), only the matching passenger's row is created
+(section 10.0.12).
 
 ### 11.9.1 Supplementary Fee on Ticket Bookings
 The `invoice.customer_supplementary_fee` (set when the supplementary checkbox is ticked on the
@@ -1062,5 +1123,5 @@ WHERE customer_deposit_id IN ({depositIds})
 
 ---
 
-**Last Updated**: July 2026 — General/Other Bookings: Description column added after Pax (service's `description`), always-empty Ref No and Vendor columns removed (2026-07-06, section 10.0.11); earlier: new Service column (all companies, 1007 restriction removed), Remarks now shows invoice remarks, Fare/Taxes/Discount/Rebate/T.Fee/SST breakdown columns added, Hide Column filter extended to this table; earlier (June 2026): Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
+**Last Updated**: July 2026 — Hotel Bookings now show one row per passenger with an S.NO column, mirroring Ticket/General (2026-07-14, section 10.0.14); all live invoices of a service are now processed instead of only the first, so passenger-wise invoices all appear and are all counted (2026-07-14, section 10.0.13); per-passenger invoices (`invoices.passenger_id`) now show one Ticket Booking row for their own passenger only and are counted once in Total Sales / Opening Balance / Customer Position Report (2026-07-14, section 10.0.12); earlier: General/Other Bookings: Description column added after Pax (service's `description`), always-empty Ref No and Vendor columns removed (2026-07-06, section 10.0.11); earlier: new Service column (all companies, 1007 restriction removed), Remarks now shows invoice remarks, Fare/Taxes/Discount/Rebate/T.Fee/SST breakdown columns added, Hide Column filter extended to this table; earlier (June 2026): Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
 
