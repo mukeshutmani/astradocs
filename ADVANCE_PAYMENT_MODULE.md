@@ -54,6 +54,28 @@ On create (`createSupplierDeposit`):
    the account up by `bank.id`. With multiple accounts per bank that lookup always
    matched the **first** account, so picking the 2nd Meezan account printed the 1st
    account's number on the document. Fixed by keying selection on the unique account id.
+5. **Manual-bank accounts**: a bank account created with the "manual bank" option has
+   `bank_id = NULL` (no row in the global banks list) and its typed name in
+   `manual_bank_name`. The dropdown label falls back to that name
+   (`account.bank?.name || account.manual_bank_name || "-"`). Previously it read
+   `account.bank.name` unconditionally, which threw on the null bank and blanked the
+   whole page as soon as a payment method with a bank dropdown (e.g. Cheque) was
+   selected — first hit by Pelican (1015), whose only account was manual.
+6. **Validation** keys on `bank_account_id` (the picked account), not `bank_id` —
+   a manual account never gets a `bank_id`, so checking `bank_id` wrongly showed
+   "Bank selection is required" even with an account selected.
+7. **Edit-mode preselect**: with a saved `bank_id` the dropdown preselects by
+   `bank_id` + `account_number`; a manual-bank advance (`bank_id` null) preselects by
+   `account_number` + `is_manual_bank` instead.
+8. **Delete/edit protection**: a bank account cannot be deleted **or edited** while
+   non-void documents (supplier advances, customer deposits, payment settlements,
+   credit notes) carry its `account_number` — the API blocks both and tells the user to
+   void/delete those documents first (`bank.controller.js`, shared
+   `countLiveDocuments` check). Both operations are company-scoped, and the usage
+   check itself is too (deposits/CNs via branch → company; settlements via the issuing
+   user) — another company reusing the same account number never blocks us. The update
+   payload is whitelisted: `company_code`/`id`/timestamps can never be changed by the
+   client.
 
 ## 4. Currency selection (base-currency aware)
 1. The company **base currency** is derived from the loaded currency list — the
@@ -90,6 +112,13 @@ On create (`createSupplierDeposit`):
    `currencies.to_currency`.
 5. The **customer** deposit equivalent (`customerDepositDocument.ejs` /
    `deposit.controller.js`) has the same fix applied — see `CUSTOMER_DEPOSIT_MODULE.md`.
+6. **Bank Name is snapshotted**: on create/update the controller stores the bank's
+   display name in `supplier_deposits.bank_name` (linked bank → `banks.name`; manual →
+   the account's `manual_bank_name`, resolved server-side, never client-supplied). The
+   document renders `bank_name || bank?.name || manualBankName` — so it survives later
+   bank-account deletion/renaming. The `manualBankName` lookup (by `account_number` +
+   `is_manual_bank`, company-scoped) remains only as a fallback for legacy rows created
+   before the column existed.
 
 ## 7. Void behaviour
 1. Voiding a supplier deposit checks it is not in use by a payment settlement, then sets

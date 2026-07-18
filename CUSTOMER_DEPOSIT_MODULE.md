@@ -31,6 +31,20 @@ invoice exists. The deposit is held and later settled against the customer's inv
 4. Selecting the base currency sets `exchange_rate = 1`; the "… Equivalent" helper under
    Amount shows the base-currency equivalent and only appears when the rate ≠ 1.
 
+## 3a. Bank account selection (manual banks supported)
+1. The bank dropdowns list bank accounts as `bank?.name || manual_bank_name (account_number)`;
+   a **manual-bank** account has `bank_id = NULL` and its typed name in `manual_bank_name`.
+2. **Validation** keys on the picked account (`selectedBankAccountId`), not `bank_id` —
+   a manual account never gets a `bank_id`, so checking `bank_id` wrongly showed
+   "Bank account is required" even with an account selected.
+3. **Edit-mode preselect**: with a saved `bank_id` the dropdown preselects by
+   `bank_id` + `account_number`; a manual-bank deposit (`bank_id` null) preselects by
+   `account_number` + `is_manual_bank` instead.
+4. Same rules as the supplier side — see `ADVANCE_PAYMENT_MODULE.md` §3a.
+5. **Open item**: unlike the supplier side, `customer_deposits` has **no `bank_name`
+   snapshot column** yet, so the printed customer-deposit document still shows the bank
+   name via the live `bank_id` join — blank for manual-bank deposits.
+
 ## 4. Printed document (currency-aware)
 1. **Received** shows the entered amount in the **entered currency**.
 2. **Amount In Words** uses the entered amount + entered currency via
