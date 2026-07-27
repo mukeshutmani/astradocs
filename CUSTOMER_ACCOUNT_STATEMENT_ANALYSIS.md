@@ -71,6 +71,12 @@ The Customer Account Statement Report:
    - **T.Fee folds into Taxes when hidden (2026-06-17)**: when **T.Fee** (`transactionFee`) is hidden, its amount is added into the **Taxes** column for each Ticket Booking row (e.g. Taxes 200 + T.Fee 50 → Taxes shows 250). This is display-only — **Net**, **Total Sales**, and **Net Balance** are unchanged. Applied at the ticket row build in `getCustomerAccountStatementReport` (`taxes = (taxesPerPassenger + (hidden ? transactionFeePerPassenger : 0)) * exchangeRate`), so both PDF and Excel (including the Excel Taxes total) reflect it. Affects the Ticket Bookings table and (2026-07-02) the General/Other Bookings table (the Refund-Ticket table is not populated in this report).
    - UI: the trigger is an **auto-width** dropdown button (`w-auto`, `min-w-[160px]`, `max-w-full`) that grows with the number of selected labels and stays within the card; built with `DropdownMenuCheckboxItem` (menu stays open on toggle via `onSelect` preventDefault).
 
+8. **Reference Column** — NEW (2026-07-21)
+   - Checkbox labelled **Reference** (`showReference`, default OFF), placed to the right of the **Opening Balance** checkbox.
+   - When ON: a **Reference** column appears **right after the Invoice column** on the **Ticket, Hotel, and General/Other Booking** tables (PDF + Excel), showing the order's **booking-level required-field value(s)** (e.g. the REFERENCE field entered via **Required Fields** on the order page).
+   - Data source (same pattern as the invoice document): `required_field_values` (`level='booking'`, `data_id` = order id) joined with `customer_required_data` for the field name, filtered to fields the customer marked **Print** (booking level) in `customer_required_data_settings`, sorted by the customer-configured `display_order`. Multiple field values are comma-joined in the cell.
+   - When OFF (default): report unchanged. Display-only — no amounts, Total Sales, or Net Balance change.
+
 7. **Hide Opening Balance** — NEW (2026-06-30)
    - Checkbox labelled **Opening Balance** (`hideOpeningBalance`, default OFF), placed to the **right of the Hide Column** dropdown. Available for **all companies**.
    - When ON: the **Opening Balance B/F** line is removed from the Summary (PDF + Excel) **and** removed from the **Net Balance** math (in the controller `openingBalance` is set to `0` before the Net Balance is computed), so the visible summary lines still reconcile to the Net Balance.
@@ -99,6 +105,7 @@ The Customer Account Statement Report:
   includeRaised: boolean,            // When true, also include un-printed "Raised" invoices
   hideColumns: string[],             // Columns to hide on Ticket tables: any of 'discount','rebate','transactionFee','sst' (display only)
   hideOpeningBalance: boolean,       // When true, hide Opening Balance B/F and remove it from Net Balance
+  showReference: boolean,            // When true, show the Reference column (booking-level required-field values) after Invoice
   type: "pdf" | "excel"              // Output format
 }
 ```
@@ -392,6 +399,7 @@ if (!inv.id || !processedInvoiceIds.has(inv.id)) {
 Columns:
 - Date (invoice_date formatted as DD-MM-YYYY)
 - Invoice (invoice_number)
+- Reference (optional, 2026-07-21 — booking-level required-field values of the order, shown only when the **Reference** checkbox is ON)
 - Status (invoice.status — Raised / Printed / Settled / Partially Settled)
 - Ticket No. (service_passenger.ticket_number)
 - Passenger (service_passenger.passenger_name)
@@ -423,6 +431,7 @@ Columns:
 - S.NO (per-invoice passenger serial, restarts each invoice — 2026-07-14)
 - Date (invoice_date formatted as DD-MM-YYYY)
 - Invoice (invoice_number)
+- Reference (optional, 2026-07-21 — shown only when the **Reference** checkbox is ON)
 - Status (invoice.status)
 - Hotel (service_hotel.hotel_name)
 - Passenger (one passenger per row — 2026-07-14, previously all names comma-joined in one row)
@@ -443,6 +452,7 @@ Columns:
 - S.NO (per-invoice passenger serial)
 - Date
 - Invoice
+- Reference (optional, 2026-07-21 — shown only when the **Reference** checkbox is ON)
 - Status
 - Pax (passenger names)
 - Description (2026-07-06 — Visa: visa code; Insurance: policy number / plan / coverage dates; others: the service's `description` field — see section 10.0.11)
@@ -461,6 +471,13 @@ Currently not used - only credit notes are shown in refund sections
 
 #### 5. **Refund General Bookings**
 Same structure as General Bookings, showing ONLY credit notes (non-void)
+
+> **One row per refunded passenger (2026-07-22)**: the **Pax** column now shows the passenger(s)
+> **actually refunded** — from the credit note's own `pax_name` (per-passenger CNs) or the linked
+> refund's `selected_passengers` / `passenger_name` — one row per refunded passenger, with the
+> credit note amount split cent-accurately across the rows and each passenger's own ticket number.
+> Previously the section showed one row per credit note with the service's FIRST passenger, which
+> was the wrong person on group bookings. See section 10.0.17.
 
 #### 6. **Receipts/Vouchers** (G/L Account Payments Only)
 **IMPORTANT**: Only receipts with G/L account payments are shown. Deposits and credit notes used in settlements are excluded.
@@ -832,6 +849,53 @@ The **Hotel Bookings** section now follows the same row rules as the Ticket and 
 
 **Files Modified**: `psback/controllers/report.controller.js` (hotel row build + Excel Hotel column list), `psback/views/pages/reports/customer-account-statement.ejs` (Hotel table header/body/total row).
 
+## 10.0.15 Reference Column — Booking-Level Required Fields (2026-07-21)
+
+A new optional **Reference** column on the **Ticket, Hotel, and General/Other Booking** tables, showing the order's booking-level required-field value(s) (the **Required Fields** dialog on the order page, e.g. `IA-FIB1-199-26`).
+
+1. **Toggle**: a **Reference** checkbox on the report filters (`showReference`, default OFF), next to the Opening Balance checkbox. OFF = report byte-for-byte unchanged.
+2. **Data source — same pattern as the invoice document** (`document.controller.js`): `required_field_values` with `level='booking'` and `data_id` = order id; field names from `customer_required_data`; only fields the customer marked **Print** (booking level) in `customer_required_data_settings`; sorted by the customer's `display_order` (name as tie-break); blank values skipped. Multiple values are comma-joined.
+3. **Placement**: right after the **Invoice** column in all three tables, PDF and Excel. PDF Total-row colspans grow by 1 when shown (Ticket `16→17 - hiddenTicketCount`, Hotel `11→12`, General `15→16 - hiddenTicketCount`); Excel adapts automatically via the dynamic `addSection` column arrays.
+   - **PDF width fix**: the Ticket table already used the full landscape page width, and wkhtmltopdf has smart shrinking disabled, so the extra column clipped the Net column off the page. When the Reference column is ON, the three booking tables get a `ref-fit` class (font 11px → 10px, padding 4px 6px → 3px 4px) so all columns fit; checkbox OFF keeps today's exact sizing.
+4. **Fetch**: one `IN` query over all report order ids (plus field-def and per-customer settings lookups), built into a `bookingRefByOrderId` map right after the orders query; each booking row carries `reference` from its order. Settings are matched per customer (`customer_number` + field id) since the report can span many customers.
+5. **Display-only** — no effect on Net, Total Sales, Opening Balance, or Net Balance. Refund/credit-note tables and the Opening Invoices table are not touched.
+
+**Files Modified**: `psback/controllers/report.controller.js` (`getCustomerAccountStatementReport` — `showReference` flag, `bookingRefByOrderId` build, `reference` on the three row builds, Excel column lists, render locals), `psback/views/pages/reports/customer-account-statement.ejs` (`showRef` + Reference th/td and colspans on the three tables), `psfront/src/pages/Report/CustomerAccountStatement.jsx` (Reference checkbox + `showReference` in DEFAULT_FILTER).
+
+## 10.0.16 PDF Layout — Narrower Side Margins + Sector Width Cap (2026-07-21)
+
+1. **Side margins reduced**: the PDF's left/right margins went from `10mm` to `5mm` (`pdfOptions` in `getCustomerAccountStatementReport`) and the template body's side padding from `10px` to `4px`, giving the tables ~14mm more usable width. Top/bottom margins unchanged.
+2. **Sector column capped**: the Ticket Booking **Sector** header now has `width:10%`, so the auto-layout no longer inflates it; the freed width flows to Passenger and the numeric columns. The Refund Ticket table's Sector is untouched.
+3. **Date on one line**: the Ticket Booking Date header + cells got `white-space:nowrap` — previously the squeezed auto-layout broke "16-07-2026" at the hyphens into three lines. Hotel/General Date columns unchanged.
+4. **Long sectors shrink and wrap**: a Ticket Booking Sector cell longer than 20 characters gets the `sector-fit` class (font 9px), and every "/" in the sector is followed by a zero-width space (`String.fromCharCode(8203)`) so the text can wrap at the slashes. Without that, wkhtmltopdf treats a no-space sector as unbreakable — the column's minimum width becomes the full string and the `width:10%` cap cannot hold (seen with `AKH/ZMH/KHI/...` covering half the page). Short sectors render identically to before.
+5. Applies always (independent of the Reference checkbox). Display-only — no data or totals change.
+
+**Files Modified**: `psback/controllers/report.controller.js` (pdfOptions margins), `psback/views/pages/reports/customer-account-statement.ejs` (body padding, Sector th width).
+
+## 10.0.17 Refund General Bookings — Correct Refunded Passenger, One Row Each (2026-07-22)
+
+**Problem**
+1. The Refund General/Other Booking section showed **one row per credit note** with the **first passenger of the whole service** (by `service_passengers` id order) in Pax — NOT the passenger who was refunded. The Ticket No column had the same flaw.
+2. On group bookings this named the wrong person. Real examples: refund KHRF00000033 (service with 11 passengers, only **Mrs Bibi Abida** refunded) showed **Mr Junaid Baig**; KHRF00000032 (47 passengers, **Mr Shahzad Ahmed + Mrs Jameela Ahmed** refunded) showed **Mr Yaqoob Muhammad**.
+3. Multi-passenger refunds also lost names — only one name showed no matter how many were refunded.
+
+**Why it happened**
+1. The row build looked up `service_passengers` of the refund's service and took the first name/ticket (`refundPassengerMap` / `refundTicketMap`), ignoring the refund's own stored data.
+2. The correct answer was already stored: `refunds.passenger_name` (comma-joined refunded names), `refunds.selected_passengers` (JSON of name+ticket actually refunded), and on newer per-passenger credit notes `credit_notes.pax_name` / `passenger_id`.
+
+**Fix** (`getCustomerAccountStatementReport`, `report.controller.js` — display-only)
+1. The credit-note query's existing `refund` include (joined by `credit_notes.refund_id`) now also fetches `passenger_name`, `selected_passengers`, `selected_tickets`.
+2. Row build per credit note, in priority order:
+   1. **`cn.pax_name` set** (per-passenger CN, e.g. TTCN00000027 "Tauqeer"): one row with that passenger and the full CN amount; ticket looked up by name in the refund's `selected_passengers`.
+   2. **Refund has `selected_passengers`** (or fallback comma-split `passenger_name`): **one row per refunded passenger**, each with their own ticket; the CN amount is split **cent-accurately** across the rows (same mechanism as the booking sections), so the section total still equals the CN totals.
+   3. **Neither available** (very old refunds): previous first-passenger-of-service behavior kept as last-resort fallback.
+3. `Less Refund Invoices`, Total Sales, Opening Balance, and Net Balance are **unchanged** — the summary adds each CN's amount once, before rows are built.
+4. PDF (`customer-account-statement.ejs`) and Excel need no changes — both render rows generically and their Total sums the rows, which equals the CN totals.
+
+**Known limitation (not fixed, by scope)**: the legacy fallback maps (`refundInvoiceMap` etc.) are keyed by `client_refrence` = `refund_no`, which is **not unique across companies** — the refunds lookup for those maps is not company-scoped. The primary paths (1) and (2) avoid this entirely via the CN's own `refund_id` join.
+
+**Files Modified**: `psback/controllers/report.controller.js` (credit-note `refund` include attributes + Refund General row build).
+
 ---
 
 ## 11. Special Handling & Edge Cases
@@ -1085,6 +1149,9 @@ WHERE customer_deposit_id IN ({depositIds})
 | journal_entry | journal_entries | Manual JE entries | Via gl_entity_id = customer_id (NEW) |
 | journal_batch | journal_batches | JE batch info | Parent of journal_entry (NEW) |
 | invoice_setting | invoice_settings | Company settings | ticket_issue_date flag (NEW) |
+| required_field_value | required_field_values | Booking-level reference values | `level='booking'`, `data_id` = order id (Reference column) |
+| customer_required_data | customer_required_data | Required-field definitions | Field names for the Reference column |
+| customer_required_data_setting | customer_required_data_settings | Per-customer field settings | Print flag + display_order (Reference column) |
 | report | reports | Report record | Created by function |
 
 ---
@@ -1123,5 +1190,5 @@ WHERE customer_deposit_id IN ({depositIds})
 
 ---
 
-**Last Updated**: July 2026 — Hotel Bookings now show one row per passenger with an S.NO column, mirroring Ticket/General (2026-07-14, section 10.0.14); all live invoices of a service are now processed instead of only the first, so passenger-wise invoices all appear and are all counted (2026-07-14, section 10.0.13); per-passenger invoices (`invoices.passenger_id`) now show one Ticket Booking row for their own passenger only and are counted once in Total Sales / Opening Balance / Customer Position Report (2026-07-14, section 10.0.12); earlier: General/Other Bookings: Description column added after Pax (service's `description`), always-empty Ref No and Vendor columns removed (2026-07-06, section 10.0.11); earlier: new Service column (all companies, 1007 restriction removed), Remarks now shows invoice remarks, Fare/Taxes/Discount/Rebate/T.Fee/SST breakdown columns added, Hide Column filter extended to this table; earlier (June 2026): Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
+**Last Updated**: July 2026 — optional **Reference** column (booking-level required-field values, same source and Print filter as the invoice document) on Ticket/Hotel/General booking tables via a new Reference checkbox, default OFF (2026-07-21, section 10.0.15); Hotel Bookings now show one row per passenger with an S.NO column, mirroring Ticket/General (2026-07-14, section 10.0.14); all live invoices of a service are now processed instead of only the first, so passenger-wise invoices all appear and are all counted (2026-07-14, section 10.0.13); per-passenger invoices (`invoices.passenger_id`) now show one Ticket Booking row for their own passenger only and are counted once in Total Sales / Opening Balance / Customer Position Report (2026-07-14, section 10.0.12); earlier: General/Other Bookings: Description column added after Pax (service's `description`), always-empty Ref No and Vendor columns removed (2026-07-06, section 10.0.11); earlier: new Service column (all companies, 1007 restriction removed), Remarks now shows invoice remarks, Fare/Taxes/Discount/Rebate/T.Fee/SST breakdown columns added, Hide Column filter extended to this table; earlier (June 2026): Include Raised Invoices now skips un-numbered Raised drafts (blank invoice_number); earlier: added "Include Raised Invoices" option (optional toggle, default OFF) with a Status column on Ticket/Hotel/General bookings (PDF + Excel); Adjustment Date Mode, Ticket Issue Date, Payments section, JV section, updated formulas, frozen exchange rate on invoice print
 

@@ -104,7 +104,6 @@ Return Response with Download Link
   endDate: string | null,              // ISO date format
   adjustmentDateMode: boolean,         // When true, use adjustment_date for posted docs
   includeRaised: boolean,              // When true, also include un-printed "Raised" XOs/costs
-  hideOpeningBalance: boolean,         // When true, hide Opening Balance B/F and exclude it from Net Balance
   type: "pdf" | "excel"                // Output format
 }
 ```
@@ -1218,22 +1217,6 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 **Files Modified**:
 - `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — main query cost include → `as: 'AllCosts'`; per-cost loop around the period processing; pax filters on the three booking builds; refund run-once guard + `refundCost`/`refundXoNumber`; vouchers read the loop's cost.
 
-### 16.20 Hide Opening Balance Checkbox (2026-07-22)
-
-**Goal**: Let the user generate a period-activity-only statement — a checkbox that removes the **Opening Balance B/F** line from the Summary. Mirrors the identical feature already live on the Customer Account Statement.
-
-**Behaviour**:
-1. New checkbox **"Opening Balance"** (`hideOpeningBalance`, default **OFF**) on the filter screen, beside "Include Raised XOs". OFF = report unchanged (byte-identical to before).
-2. When ON, the Opening Balance B/F row is hidden from the Summary **and its amount is excluded from Net Balance**, so the visible summary lines still reconcile to the Net shown. Applies to PDF and Excel both.
-3. The opening balance **computation is untouched** — all historical queries/loops still run; the value is zeroed just before the Net Balance line (`if (hideOpeningBalance) { openingBalance = 0; }`, same as the customer function). `summary.openingBalance` is therefore `0` when hidden, which keeps the Excel builder's and the EJS template's independently recomputed `calculatedNetBalance` automatically consistent.
-
-**Verified (2026-07-22, company 1007, 07/01–07/20)**: 16 suppliers, opening sum 434,557.00. Flag ON → row absent in PDF and Excel, net sum dropped by exactly 434,557.00, every other summary line identical.
-
-**Files Modified**:
-- `psback/controllers/report.controller.js` (`getSupplierAccountStatementReport`) — `hideOpeningBalance` read from request; zeroing before Net Balance; Excel `summaryRows` Opening row made conditional; flag passed to the PDF render locals.
-- `psback/views/pages/reports/supplier-account-statement.ejs` — Opening Balance B/F row wrapped in `<% if (!hideOpeningBalance) { %>`.
-- `psfront/src/pages/Report/SupplierAccountStatement.jsx` — `hideOpeningBalance: false` in `DEFAULT_FILTER`; checkbox added beside "Include Raised XOs".
-
 ### 16.4 Summary of Changes
 
 **Before**:
@@ -1270,5 +1253,5 @@ refund.supplier_refund_amount subtracted from addSaleInvoices
 
 ---
 
-**Last Updated**: 2026-07-22 — Section 16.20 (Hide Opening Balance checkbox: hides the B/F line and excludes it from Net Balance, mirroring the Customer Account Statement); 2026-07-14 — Class column in the PDF Ticket Bookings table narrowed to shrink-to-fit (`width: 1%; nowrap`, same treatment as S.NO — `renderTable` th/td in `supplier-account-statement.ejs`; Excel unchanged); Section 16.19 (passenger-wise XOs: period sections now process ALL live costs of a service via the `AllCosts` relation; pax-wise XO rows show only their own passenger; opening-balance slice still pending); 2026-07-03 — Section 16.17 (Remarks column in Advance Payments section); 2026-06-20 — Section 16.16 (Ticket Bookings split per cost item, not per whole XO; Refund-Ticket already per-item); 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
+**Last Updated**: 2026-07-14 — Class column in the PDF Ticket Bookings table narrowed to shrink-to-fit (`width: 1%; nowrap`, same treatment as S.NO — `renderTable` th/td in `supplier-account-statement.ejs`; Excel unchanged); Section 16.19 (passenger-wise XOs: period sections now process ALL live costs of a service via the `AllCosts` relation; pax-wise XO rows show only their own passenger; opening-balance slice still pending); 2026-07-03 — Section 16.17 (Remarks column in Advance Payments section); 2026-06-20 — Section 16.16 (Ticket Bookings split per cost item, not per whole XO; Refund-Ticket already per-item); 16.15 (General/Other splits per cost item, not per whole XO); 16.14 (General/Other per-passenger rows, S.No, pax-wise amount); 16.13 (S.No on Ticket + Refund Ticket); 16.12 (keep Summary box on one page); 16.11 (per-passenger amount split on XO Ticket / Refund-Ticket rows)
 

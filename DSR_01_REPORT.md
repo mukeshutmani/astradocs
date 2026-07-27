@@ -85,8 +85,10 @@ DROP TABLE report_layouts;
    auto-size to content, so amount and date cells always show in full; only the text-heavy
    columns (Client Name, Invoice Description, Supp Name, Pax via `max-width` caps) ellipsize.
    Invoice No. and XO Number stay on **one line** (`.wrap-narrow` is nowrap since 2026-07-13,
-   despite its inherited name). PNR/Ticket Number cells fit one full 10-digit ticket per line
-   (`max-width: 72px`); multi-ticket invoices wrap at the commas, never inside a number.
+   despite its inherited name). PNR cells (`max-width: 72px`) fit one full 10-digit ticket per
+   line; Ticket Number has its own `.ticket-cell` (`max-width: 92px`, 2026-07-20) so one full
+   **prefixed** ticket (`214-5518213255`) fits per line; multi-ticket invoices wrap at the
+   commas, never inside a number.
 3. **Data-driven page fit (2026-07-14).** A CSS table's `width` is a *minimum* — when the
    data's widest cells need more, the table silently outgrows it, and at a fixed zoom the
    extra pixels fall off the paper (that clipped the Pax column on 07-14). So the controller
@@ -118,7 +120,7 @@ layout means editing that one file; the EJS template just loops over it.
 | 1 | Invoice No. | `documents.document_number` |
 | 2 | Inv. Date | invoice issue date (Air `ticket_issue_date` rule applies) |
 | 3 | PNR | `services.pnr`, de-duplicated per invoice |
-| 4 | Ticket Number | `service_passengers.ticket_number`, de-duplicated per invoice |
+| 4 | Ticket Number | `service_passengers.ticket_number`, de-duplicated per invoice. **Air tickets carry the airline's 3-digit code** (2026-07-20), e.g. `214-5518213255` — same source as the invoice document: first flight leg's `airline_codes.airline_ticket_prefix`, fallback to the service's own airline (`services.airline_form`). Non-Air services, services with no airline, and tickets already containing a `-` stay bare. Applied when the row is built, so **PDF and Excel both** show it |
 | 5 | Status | `invoices.status` (`Partially Settled` → `PS`) |
 | 6 | Client Name | `customer.customer_name` |
 | 7 | Invoice Description | `services.description`, de-duplicated per invoice |
@@ -137,6 +139,22 @@ layout means editing that one file; the EJS template just loops over it.
 | 20 | **Total Cost** | the row's XO cost (`payable.total`) — added 2026-07-13 |
 | 21 | Total Sales | `invoices.total_price` |
 | 22 | Pax | passenger names |
+
+**Optional Reference column (2026-07-21):** a **Reference** checkbox on the filter page
+(`showReference`, default OFF) adds a **Reference** column right after **Invoice
+Description** (PDF + Excel), showing the order's **booking-level required-field value(s)** —
+the Required Fields dialog on the order page. Same pattern as the Customer Account
+Statement / invoice document: `required_field_values` (`level='booking'`, `data_id` = order
+id) + `customer_required_data` field names, filtered to fields the customer marked
+**Print** (booking level) in `customer_required_data_settings`, sorted by the customer's
+`display_order`, values comma-joined. Implementation: the registry carries the column with
+`optional: true` and `resolveColumns({ showReference })` filters it, so the PDF template,
+group headers, TOTAL span and the auto-fit width estimator (cap `92px`, class
+`client-cell`) all follow automatically; rows carry `order_id` / `customer_number` and the
+controller stamps `reference` after the per-invoice grouping. Excel inserts the
+header/cell/TOTAL-blank conditionally and widens the title merges `U → V`. Secondary
+(multi-XO) rows show it blank (`blankOnSecondary`). Checkbox OFF → report unchanged, no
+extra query.
 
 **Total Cost (added 2026-07-13):** per-XO cost, so it stays filled on secondary
 (additional-XO) rows like Supp Name / XO Number, and shows `0.00` when an invoice has no

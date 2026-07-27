@@ -51,6 +51,23 @@ opened in another (unauthenticated) browser and there is no shareable link.
 Verify: open an invoice document → Preview/Print/Download work; then open
 `/document/<invoice document number>` in another browser with **no login** → 401 (does not open).
 
+### 2026-07-24 — Cross-company WRITE: `updateStatus` print/void flipped other companies' documents (FIXED)
+`PUT /document/updateStatus/:documentNumber` (`controllers/document.controller.js`, `updateStatus`)
+looked up documents by `document_number` only — no company filter. Because document numbers repeat
+per company, one company printing (or voiding) their document updated **every company's** invoices
+or costs with that number.
+- Proven damage (company 1001): voided invoices KHIN00000003 / KHIN00000011 were silently flipped
+  back to `Printed` when other companies printed their same-numbered invoices
+  (fingerprint: many companies' rows sharing one `updated_at` second — 2026-06-22 09:43:01,
+  2026-07-20 10:00:17 / 10:08:59, 2026-07-21 09:38:43, 2026-07-23 11:28:14). Verified against the
+  01-Jul and 13-Jul backups and the 14-Jul staging clone.
+- Fix: `Document.findAll` now joins `db.user` with `where company_code = req.user.company_code`
+  (same pattern as `batchPrintDocuments`), and the follow-up `Document.update` targets the
+  authorized row ids instead of `document_number`. The derived `invoiceIds` / `costIds` are
+  therefore company-scoped too.
+- Data repair still pending after deploy: company 1001 invoices id 6947 (KHIN00000003) and
+  id 6958 (KHIN00000011) must be set back to `Void` in production, then JE void-reversals run.
+
 ## Pending (need a decision before coding)
 
 ### Tier 1 — document render routes + static file folders
