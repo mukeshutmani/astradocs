@@ -68,6 +68,7 @@
 1. **Order** — one per customer group: `order_type = 'Visa Import'`, status Active, customer's branch / salesperson / booking type, sequential company-scoped order number.
 2. **Service item** — one `services` row per PTC group inside the order: `service_type_id` = selected visa product (71/Visa), status Booked, **quantity = number of pax in the group**, supplier from Supplier No, `pnr` empty, linked to the order.
 3. **Visa applicants** — one `service_visas` row **per Excel row (per pax)** under its service item: pax name (given_name), PTC, gender, nationality, destination, passport number, price, cost, entries, purpose, length of stay, remarks. `visa_code` stays empty. This is what makes the detail page and visa summary show pax-wise lines.
+   1. **Order-level passenger records too** — each pax also gets a `passengers` row (name, passport number, type, first pax = Lead) + a `service_passengers` link, so the Passengers grid on the order page fills exactly like an Air-imported order. Visa PTC codes map down to the passenger types the grid supports: `ADT` → ADT, child codes (`C05` etc.) → CHD, `INF` → INF; the exact PTC stays on the visa row.
 4. **Cost pricing row** — one `costs` row per service item: amount / published_rate = per-visa Cost, quantity = pax count, item total = Cost × pax count, commission if provided, status Raised. Amounts are imported as plain numbers; the system's existing currency feature handles currency the same as everywhere else — the import adds no currency logic of its own.
 5. **Invoice pricing row** — one `invoices` row per service item: price = per-visa Price, quantity = pax count, markup / discount if provided, transaction fee per section 6.3, item total = (Price × pax count) − discount + markup + transaction fee, status Raised.
 6. **Order totals are calculated, not imported** — Base Price (Total from all visas) and Total Cost (All Visas) come from the system's own math (per-visa amount × pax, summed per group), exactly like a manually created visa order. The Excel has no total columns.
@@ -145,7 +146,26 @@
 4. ~~Base Price vs calculated total mismatch~~ — ANSWERED: not applicable. The Excel has no total columns; the system calculates Base Price (Total) and Total Cost (All Visas) itself from the per-visa Price and Cost, so no mismatch is possible.
 5. ~~Item grouping key~~ — ANSWERED: PTC only, with the consistency rule in section 2.1.4 (mismatched Destination/Price/Cost inside one PTC group = error popup, customer skipped).
 
-## 9. Out of scope (this phase)
+## 9. Review fixes (2026-07-28, after venom senior review)
+
+1. **Clear error for company-less users** — import/preview now reject up front with "Your user account has no company assigned" instead of a raw DB error (`visaImport.controller.js parseRequest`).
+2. **Concurrent duplicate race closed** — each pax's passport is re-checked INSIDE the save transaction with a `SELECT ... FOR UPDATE` lock; a clash rolls the customer back with a plain message (`orderBuilder.js`).
+3. **Order-number clash auto-retry** — a concurrent import taking the same order number now triggers up to 3 re-allocations instead of failing the customer (`orderBuilder.js`).
+4. **Excel heading spaces trimmed** — `"Customer No "` now matches `"Customer No"` (`excelParser.js`).
+5. **Blank = 0 for money columns** in the PTC-group consistency check; supplier/destination stay strictly compared (`rowValidator.js`).
+6. **Oversized commission caught at validation** — commission ≥ ~1000× cost (DB percent-field overflow) now fails the row with a readable message, visible in Preview too (`rowValidator.js`).
+7. **Passport duplicate lookup batched** — one query per file instead of one per row; the per-pax locked re-check (fix 2) remains (`orderBuilder.js` + `importService.js`).
+8. **"First sheet only" noted on the visa page** info box.
+9. **Shared mapping endpoints company-scoped** — `/data/profile*` (used by BOTH Air and Visa mapping screens since the Air era) now verify the template belongs to the user's company (or is global) before read/write/delete; also fixed a crash when deleting a non-existent mapping id (`data.controller.js templateAccessibleByUser`). **Air template screen needs one re-test after this.**
+10. **Accepted as-is**: in-file duplicate marking may reference a row from a customer that itself got skipped (message stays truthful; re-import after fixing resolves it), and Preview showing only the first 20 rows (totals/errors still cover the whole file).
+
+Round 2 (same day):
+
+11. **Order-number retry made effective** — retries now re-scan with a `FOR UPDATE` locking read so they see the concurrently committed order instead of the transaction's stale snapshot re-producing the same clashing number (`orderBuilder.js allocateOrderNumber`).
+12. **Branch prefix escaped in the number-parsing regex** (`orderBuilder.js escapeRegex`) — a prefix with a regex-special character can no longer distort numbering.
+13. **Parked (needs DB approval)**: Flyway migration adding an index on `service_visas.passport_number` to keep the locked duplicate re-check narrow as data grows.
+
+## 10. Out of scope (this phase)
 
 1. Visa Code matching or syncing with Visa Code Maintenance.
 2. Merging different customers into one order (grouping is per customer within one file).
